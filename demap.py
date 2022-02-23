@@ -1,6 +1,5 @@
 import copy
 import math
-from turtle import speed
 import numpy as np
 import rasterio as rio
 import richdem
@@ -11,6 +10,7 @@ try:
 except ImportError:
     USE_NUMBA = False
 
+INT = np.int32
 
 class GeoArray:
     """A array with georeferencing and metadata"""
@@ -50,7 +50,7 @@ class Stream:
     """A stream"""
 
     def __init__(self, coords):
-        self.coords = coords  # n by 2 np.ndarray
+        self.coords = np.array(coords, dtype=INT)  # n by 2 np.ndarray
         self.dist_up = None  # upstream distance
 
     def __repr__(self):
@@ -76,6 +76,131 @@ class Stream:
 
         self.dist_up = dist_up
         return self.dist_up
+
+
+class StreamNetwork:
+    """
+    A StreamNetwork object saves the stream network using link information
+
+    `ordered_nodes` saves the coordinates of all the nodes in this network,
+    with upstream-to-downstream order.
+
+    `downstream` and `upstream` save the link information. Both of them are
+    saved as indexes in the `ordered_nodes`.
+
+    `downstream` saves receiver info, `downstream[i]` is the receiver of `ordered_noded[i]`
+    `upstream` saves donor info, `upstream[i]` is the donor of `ordered_noded[i]`
+        `upstream` is a n x 9 np.ndarray, `upstream[i]` represents the number of
+        donors plus 8 possilbe donor.
+
+    if `downstream` is -1, then this is an outlet.
+    if `
+    """
+
+    def __init__(self, receiver: GeoArray = None):
+        if receiver is not None:
+            self.build_from_receiver_array(receiver)
+
+    def build_from_receiver_array(self, receiver: GeoArray):
+        self.dx = np.abs(receiver.transform[0])
+        self.dy = np.abs(receiver.transform[4])
+       
+        self.ordered_nodes = build_ordered_array(receiver)
+        self.n_nodes = len(self.ordered_nodes)
+        self._build_hashmap()
+
+        ordered_nodes = self.ordered_nodes
+        i_list = ordered_nodes[:, 0]
+        j_list = ordered_nodes[:, 1]
+        # receiver_list follow the order of ordered_nodes
+        receiver_list = receiver.data[i_list, j_list]
+        
+        downstream = -np.ones(self.n_nodes, dtype=INT)
+        upstream = -np.ones((self.n_nodes, 9), dtype=INT)
+        upstream[:, 0] = 0
+        
+        index_of = self.index_of
+        for k in range(len(receiver_list)):
+            from_idx = index_of(ordered_nodes[k, 0], ordered_nodes[k, 1])
+            to_idx = index_of(receiver_list[k, 0], receiver_list[k, 1])
+            
+            if from_idx != to_idx:  # not outlet
+                downstream[from_idx] = to_idx
+                upstream[to_idx, 0] += 1  # number of upstream nodes
+                upstream[to_idx, upstream[to_idx, 0]] = from_idx
+
+        self.ordered_nodes = ordered_nodes
+        self.downstream = downstream
+        self.upstream = upstream
+
+    def _build_hashmap(self):
+        assert isinstance(self.ordered_nodes, np.ndarray), 'Missing ordered_nodes or wrong type'
+
+        ordered_nodes = self.ordered_nodes
+        nodes_hash = {}
+        for k in range(len(ordered_nodes)):
+            row, col = ordered_nodes[k]
+            nodes_hash['{}_{}'.format(int(row), int(col))] = k
+
+        self._nodes_hash = nodes_hash
+
+    def index_of(self, row, col):
+        return self._nodes_hash['{}_{}'.format(int(row), int(col))]
+
+    def to_streams(self, mode='all'):
+        assert mode in ['all', 'tributary'], "Unknow mode, accepted modes are: \
+            \'all\', \'tributary\'"
+
+        ordered_nodes = self.ordered_nodes
+        upstream = self.upstream
+        downstream = self.downstream
+        index_of = self.index_of
+
+        # streams_idx[k] represents stream section starting from ordered_nodes[k]
+        # recorded by index in ordered_nodes
+        streams_idx = np.empty(self.n_nodes, dtype=object)
+         
+        for k in range(self.n_nodes-1, -1, -1):
+            if downstream[k] == -1:
+                streams_idx[k] = np.array([k])
+            else:
+                r_i, r_j = ordered_nodes[downstream[k]]
+                streams_idx[k] = np.append(k, streams_idx[index_of(r_i, r_j)])
+
+        # we only want stream start from the head
+        streams_idx = streams_idx[np.where(upstream[:, 0] == 0)]
+
+        # build streams from stream_idx
+        streams = np.empty(len(streams_idx), dtype=object)
+        for k in range(len(streams_idx)):
+            streams[k] = Stream(coords=ordered_nodes[streams_idx[k]])
+            streams[k].get_upstream_distance(self.dx, self.dy)
+
+        # sort by length
+        length_list = np.array([st.dist_up[0] for st in streams])
+        sort_idx = np.argsort(length_list)[::-1]
+        streams = streams[sort_idx]
+        streams_idx = streams_idx[sort_idx] # this is for split tributaries
+
+        # split the stream network into tributaries
+        if mode == 'tributary':
+            in_streams = np.zeros(self.n_nodes, dtype=np.int8)
+
+            for k in range(len(streams_idx)):
+                not_in_streams = np.logical_not(in_streams[streams_idx[k]])
+                streams[k].coords = streams[k].coords[np.where(not_in_streams)]
+                streams[k].dist_up = streams[k].dist_up[np.where(not_in_streams)]
+
+                # new coords, put them into network
+                added_nodes_idx = streams_idx[k][np.where(not_in_streams)]
+                in_streams[added_nodes_idx] = True
+
+            # sort by length again
+            length_list = np.array([st.dist_up[0] for st in streams])
+            sort_idx = np.argsort(length_list)[::-1]
+            streams = streams[sort_idx]
+
+        return streams
 
 
 def rowcol_to_xy(row, col, transform: rio.Affine):
@@ -246,7 +371,20 @@ def flow_accumulation(receiver: GeoArray, ordered_nodes: np.ndarray):
 
 
 def extract_stream_network(receiver: GeoArray, drainage_area: GeoArray,
-                           drainage_area_threshold=1e6, mode='all'):
+                           drainage_area_threshold=1e6):
+
+    receiver_in_stream = copy.deepcopy(receiver)
+    # all nodes with drainage_area smaller than the threshold are set as nodata
+    receiver_in_stream.data[np.where(drainage_area.data < drainage_area_threshold)] = np.array(receiver.nodata)
+
+    stream_network = StreamNetwork(receiver_in_stream)
+
+    return stream_network
+
+
+def extract_stream_network_from_receiver(
+        receiver: GeoArray, drainage_area: GeoArray,
+        drainage_area_threshold=1e6, mode='all'):
     assert mode in ['all', 'tributary'], "Unknow mode, accepted modes are: \'all\', \'tributary\'"
     ni, nj, _ = receiver.data.shape
     dx = np.abs(receiver.transform[0])
@@ -262,7 +400,7 @@ def extract_stream_network(receiver: GeoArray, drainage_area: GeoArray,
     for i in range(ni):
         for j in range(nj):
             if is_head[i, j]:
-                stream_coords = _extract_stream_impl(i, j, valid_receiver_data)
+                stream_coords = _extract_stream_from_receiver_impl(i, j, valid_receiver_data)
                 stream = Stream(coords=stream_coords)
                 # all stream ends at a outlet, so we do dist_up here
                 # the distance will be the distance to its outlet for each node
@@ -308,14 +446,29 @@ def get_value_along_stream(stream: Stream, grid: GeoArray):
     return grid.data[i_list, j_list]
 
 
-def extract_stream(x, y, receiver: GeoArray):
-    # TODO
+def extract_stream(x, y, stream_network: np.ndarray, direction='down'):
+    """Extract stream for given geographic x, y coordinates
+    """
+    assert direction in ['up', 'down'], 'Unknown direction.'
+
+    i, j = xy_to_rowcol(x, y)
+    if direction == 'down':
+        _extract_stream_down(i, j, stream_network)
+    elif direction == 'up':
+        _extract_stream_up(i, j, stream_network)
+
+
+def _extract_stream_down(i, j, stream_network):
     pass
+
+
+def _extract_stream_up(i, j, stream_network):
+    raise NotImplementedError
 
 
 def get_stream_order():
     # TODO
-    pass
+    raise NotImplementedError
 
 
 def extract_catchment(x, y, receiver: GeoArray, ordered_nodes: np.ndarray):
@@ -333,12 +486,14 @@ def extract_catchment(x, y, receiver: GeoArray, ordered_nodes: np.ndarray):
 
 def clip_mask():
     # TODO
-    pass
+    raise NotImplementedError
 
 
 # ============================================================
 # Implementation. These methods can use `numba` to speed up.
 # ============================================================
+# Currently all these functions set default nodata [-1, -1] for receiver.
+# Plan to enable a way to pass a nodata value for these funcs in the future.
 
 def _speed_up(func):
     """A conditional decorator that use numba to speed up the function"""
@@ -355,7 +510,7 @@ def _build_receiver_impl(flow_dir: np.ndarray):
     dj = [0, -1, -1, 0, 1, 1, 1, 0, -1]
 
     ni, nj = flow_dir.shape
-    receiver = np.zeros((ni, nj, 2), dtype=np.int32)
+    receiver = np.zeros((ni, nj, 2), dtype=INT)
 
     for i in range(ni):
         for j in range(nj):
@@ -418,7 +573,7 @@ def _build_ordered_array_impl(receiver: np.ndarray):
 
     in_list = np.zeros((ni, nj))
     stack_size = 0
-    ordered_nodes = np.zeros((ni*nj, 2), dtype=np.int32)
+    ordered_nodes = np.zeros((ni*nj, 2), dtype=INT)
     for i in range(ni):
         for j in range(nj):
             if is_head[i, j]:
@@ -451,13 +606,13 @@ def _flow_accumulation_impl(receiver: np.ndarray, ordered_nodes: np.ndarray, cel
 
 
 @_speed_up
-def _extract_stream_impl(i, j, receiver: np.ndarray):
+def _extract_stream_from_receiver_impl(i, j, receiver: np.ndarray):
     if receiver[i, j, 0] == -1:
         raise RuntimeError("Invalid coords i, j. This is a nodata point.")
 
     # numba does not work with python list, so we allocate a np.ndarray here,
     # then change its size later if necessary
-    stream_coords = np.zeros((10000, 2), dtype=np.int16)
+    stream_coords = np.zeros((10000, 2), dtype=INT)
 
     stream_coords[0] = [i, j]
     k = 1
@@ -468,7 +623,7 @@ def _extract_stream_impl(i, j, receiver: np.ndarray):
             stream_coords[k] = [r_i, r_j]
             k += 1
         else:
-            stream_coords = np.vstack((stream_coords, np.zeros((10000, 2), dtype=np.int16)))
+            stream_coords = np.vstack((stream_coords, np.zeros((10000, 2), dtype=INT)))
             stream_coords[k] = [r_i, r_j]
             k += 1
         i, j = r_i, r_j
