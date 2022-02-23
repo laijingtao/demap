@@ -1,4 +1,5 @@
 from ast import Str
+from dis import dis
 from turtle import st
 import numpy as np
 import rasterio as rio
@@ -62,14 +63,25 @@ class Stream:
         return f'Stream({self.coords})'
     
     def get_upstream_distance(self, dx, dy):
-        dist_up = np.zeros(self.coords.shape[0])
-        for k in range(len(dist_up)-2, -1, -1):
-            i, j = self.coords[k]
-            r_i, r_j = self.coords[k+1]
-            d_dist = np.sqrt((np.abs(i-r_i)*dy)**2 + (np.abs(j-r_j)*dx)**2)
-            dist_up[k] = dist_up[k+1] + d_dist
+        if len(self.coords) == 1:
+            self.dist_up = np.array([0.])
+            return self.dist_up
+        
+        dist_up = np.zeros(len(self.coords))
+        dist_down = np.zeros(len(self.coords))
+
+        i_list = self.coords[:, 0]
+        j_list = self.coords[:, 1]
+
+        d_i = np.abs(i_list[:-1] - i_list[1:])
+        d_j = np.abs(j_list[:-1] - j_list[1:])
+        d_dist = np.sqrt(np.power(d_i*dy, 2) + np.power(d_j*dx, 2))
+
+        dist_down[1:] = np.cumsum(d_dist)
+        dist_up = dist_down[-1] - dist_down
         
         self.dist_up = dist_up
+        return self.dist_up
 
 def load(filename):
     """Read a geospatial data"""
