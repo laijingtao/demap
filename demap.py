@@ -1,3 +1,5 @@
+from ast import Str
+from turtle import st
 import numpy as np
 import rasterio as rio
 import richdem
@@ -60,7 +62,7 @@ class Stream:
         return f'Stream({self.coords})'
     
     def get_upstream_distance(self, dx, dy):
-        dist_up = np.zeors(self.coords.shape[0])
+        dist_up = np.zeros(self.coords.shape[0])
         for k in range(len(dist_up)-2, -1, -1):
             i, j = self.coords[k]
             r_i, r_j = self.coords[k+1]
@@ -201,6 +203,8 @@ def flow_accumulation(receiver: GeoArray, ordered_nodes: np.ndarray):
 
 def extract_stream_network(receiver: GeoArray, ordered_nodes: np.ndarray, drainage_area: GeoArray, drainage_area_threshold=1e6):
     ni, nj, _ = receiver.data.shape
+    dx = np.abs(receiver.transform[0])
+    dy = np.abs(receiver.transform[4])
     
     valid_receiver_data = copy.deepcopy(receiver.data)
     # all nodes with drainage_area smaller than the threshold are set as nodata
@@ -213,12 +217,18 @@ def extract_stream_network(receiver: GeoArray, ordered_nodes: np.ndarray, draina
         for j in range(nj):
             if is_head[i, j]:
                 stream_coords = _extract_stream_impl(i, j, valid_receiver_data)
-                if stream_coords is not None:
-                    stream = Stream(coords=stream_coords)
-                    stream_network.append(stream)
+                stream = Stream(coords=stream_coords)
+                stream.get_upstream_distance(dx, dy)
+                stream_network.append(stream)
     
     return stream_network
-                
+
+def get_value_along_stream(stream: Stream, grid: GeoArray):
+    i_list = stream.coords[:, 0]
+    j_list = stream.coords[:, 1]
+
+    return grid.data[i_list, j_list]
+
 def extract_stream(x, y, receiver: GeoArray):
     #TODO
     pass
