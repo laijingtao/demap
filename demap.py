@@ -1,6 +1,3 @@
-from ast import Str
-from dis import dis
-from turtle import st
 import numpy as np
 import rasterio as rio
 import richdem
@@ -11,13 +8,6 @@ try:
     USE_NUMBA = True
 except ImportError:
     USE_NUMBA = False
-
-def _speed_up(func):
-    """A conditional decorator that use numba to speed up the function"""
-    if USE_NUMBA:
-        return numba.njit(func)
-    else:
-        return func
 
 class GeoArray:
     """A array with georeferencing and metadata"""
@@ -177,6 +167,12 @@ def flow_direction(dem: GeoArray):
     return flow_dir, receiver
 
 def build_receiver(flow_dir: GeoArray):
+    """Build receiver
+    Return:
+        receiver: an GeoArray that stores receiver node information.
+            Each element is a 1 x 2 array that denotes a pair of indices
+            in the associated GeoArray.
+    """
     
     receiver_data = _build_receiver_impl(flow_dir.data)
     receiver = GeoArray(receiver_data,
@@ -199,6 +195,8 @@ def build_ordered_array(receiver: GeoArray):
     return ordered_nodes
 
 def flow_accumulation(receiver: GeoArray, ordered_nodes: np.ndarray):
+    """Flow accumulation
+    """
     dx = np.abs(receiver.transform[0])
     dy = np.abs(receiver.transform[4])
     cellsize = dx * dy
@@ -213,7 +211,9 @@ def flow_accumulation(receiver: GeoArray, ordered_nodes: np.ndarray):
     
     return drainage_area
 
-def extract_stream_network(receiver: GeoArray, ordered_nodes: np.ndarray, drainage_area: GeoArray, drainage_area_threshold=1e6):
+def extract_stream_network(receiver: GeoArray, drainage_area: GeoArray,
+                           drainage_area_threshold=1e6, mode='all'):
+    assert mode in ['all', 'tributary'], "Unknow mode, accepted modes are: \'all\', \'tributary\'"
     ni, nj, _ = receiver.data.shape
     dx = np.abs(receiver.transform[0])
     dy = np.abs(receiver.transform[4])
@@ -230,9 +230,40 @@ def extract_stream_network(receiver: GeoArray, ordered_nodes: np.ndarray, draina
             if is_head[i, j]:
                 stream_coords = _extract_stream_impl(i, j, valid_receiver_data)
                 stream = Stream(coords=stream_coords)
+                # all stream ends at a outlet, so we do dist_up here
+                # the distance will be the distance to its outlet for each node
                 stream.get_upstream_distance(dx, dy)
                 stream_network.append(stream)
-    
+    stream_network = np.array(stream_network)
+
+    # sort by length
+    length_list = np.array([s.dist_up[0] for s in stream_network])
+    sort_idx = np.argsort(length_list)[::-1]
+    sort_idx = sort_idx.astype(dtype=int)
+    stream_network = stream_network[sort_idx]
+
+    if mode == 'tributary':
+        # split the stream network into tributaries
+        in_network = np.zeros((ni, nj))
+
+        for stream in stream_network:
+            i_list = stream.coords[:, 0]
+            j_list = stream.coords[:, 1]
+            in_network_mask = in_network[i_list, j_list]
+            stream.coords = stream.coords[np.where(np.logical_not(in_network_mask))]
+            stream.dist_up = stream.dist_up[np.where(np.logical_not(in_network_mask))]
+
+            # new coords, put them into network
+            i_list = stream.coords[:, 0]
+            j_list = stream.coords[:, 1]
+            in_network[i_list, j_list] = True
+
+        # sort by length again
+        length_list = np.array([s.dist_up[0] for s in stream_network])
+        sort_idx = np.argsort(length_list)[::-1]
+        sort_idx = sort_idx.astype(dtype=int)
+        stream_network = stream_network[sort_idx]
+
     return stream_network
 
 def get_value_along_stream(stream: Stream, grid: GeoArray):
@@ -244,6 +275,28 @@ def get_value_along_stream(stream: Stream, grid: GeoArray):
 def extract_stream(x, y, receiver: GeoArray):
     #TODO
     pass
+
+def get_stream_order():
+    #TODO
+    pass
+
+def extract_catchment(x, y, receiver: GeoArray, ordered_nodes: np.ndarray):
+    #TODO
+    pass
+
+
+
+
+# ============================================================
+# Implementation. These methods can use `numba` to speed up.
+# ============================================================
+
+def _speed_up(func):
+    """A conditional decorator that use numba to speed up the function"""
+    if USE_NUMBA:
+        return numba.njit(func)
+    else:
+        return func
 
 @_speed_up
 def _extract_stream_impl(i, j, receiver: np.ndarray):
