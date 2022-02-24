@@ -12,6 +12,7 @@ except ImportError:
 
 INT = np.int32
 
+
 class GeoArray:
     """A array with georeferencing and metadata"""
 
@@ -45,6 +46,11 @@ class GeoArray:
 
         return out_rd
 
+    def rowcol_to_xy(self, row, col):
+        return rowcol_to_xy(row, col, self.transform)
+
+    def xy_to_rowcol(self, x, y):
+        return xy_to_rowcol(x, y, self.transform)
 
 class Stream:
     """A stream"""
@@ -52,6 +58,7 @@ class Stream:
     def __init__(self, coords):
         self.coords = np.array(coords, dtype=INT)  # n by 2 np.ndarray
         self.dist_up = None  # upstream distance
+        self.attrs = {}
 
     def __repr__(self):
         return f'Stream({self.coords})'
@@ -77,6 +84,15 @@ class Stream:
         self.dist_up = dist_up
         return self.dist_up
 
+    def get_value(self, grid: GeoArray, name=None):
+        i_list = self.coords[:, 0]
+        j_list = self.coords[:, 1]
+
+        if name is not None:
+            self.attrs[name] = grid.data[i_list, j_list]
+
+        return grid.data[i_list, j_list]
+
 
 class StreamNetwork:
     """
@@ -97,14 +113,24 @@ class StreamNetwork:
     if `
     """
 
-    def __init__(self, receiver: GeoArray = None):
+    def __init__(self, receiver: GeoArray = None, **kwargs):
         if receiver is not None:
             self.build_from_receiver_array(receiver)
+        elif all(k in kwargs for k in ('ordered_nodes', 'downstream', 'upstream')):
+            self.ordered_nodes = kwargs['ordered_nodes']
+            self.n_nodes = len(self.ordered_nodes)
+            self._build_hashmap()
+            self.downstream = kwargs['downstream']
+            self.upstream = kwargs['upstream']
+            self.crs = kwargs.get('crs', None)
+            self.transform = kwargs.get('transform', None)
+        else:
+            print("Warning: incomplete input, an empty StreamNetwork was created")
 
     def build_from_receiver_array(self, receiver: GeoArray):
-        self.dx = np.abs(receiver.transform[0])
-        self.dy = np.abs(receiver.transform[4])
-       
+        self.transform = copy.deepcopy(receiver.transform)
+        self.crs = copy.deepcopy(receiver.crs)
+
         self.ordered_nodes = build_ordered_array(receiver)
         self.n_nodes = len(self.ordered_nodes)
         self._build_hashmap()
@@ -114,16 +140,16 @@ class StreamNetwork:
         j_list = ordered_nodes[:, 1]
         # receiver_list follow the order of ordered_nodes
         receiver_list = receiver.data[i_list, j_list]
-        
+
         downstream = -np.ones(self.n_nodes, dtype=INT)
         upstream = -np.ones((self.n_nodes, 9), dtype=INT)
         upstream[:, 0] = 0
-        
+
         index_of = self.index_of
         for k in range(len(receiver_list)):
             from_idx = index_of(ordered_nodes[k, 0], ordered_nodes[k, 1])
             to_idx = index_of(receiver_list[k, 0], receiver_list[k, 1])
-            
+
             if from_idx != to_idx:  # not outlet
                 downstream[from_idx] = to_idx
                 upstream[to_idx, 0] += 1  # number of upstream nodes
@@ -147,6 +173,24 @@ class StreamNetwork:
     def index_of(self, row, col):
         return self._nodes_hash['{}_{}'.format(int(row), int(col))]
 
+    def nearest_to_xy(self, x, y):
+        """
+        Return the stream node nearest to given x, y geographic coordinates.
+        """
+        row, col = self.xy_to_rowcol(x, y)
+        d_i = np.abs(self.ordered_nodes[:, 0] - row)
+        d_j = np.abs(self.ordered_nodes[:, 1] - col)
+        dist = np.sqrt(np.power(d_i, 2) + np.power(d_j, 2))
+        node = self.ordered_nodes[np.argmin(dist)]
+
+        return node
+
+    def rowcol_to_xy(self, row, col):
+        return rowcol_to_xy(row, col, self.transform)
+
+    def xy_to_rowcol(self, x, y):
+        return xy_to_rowcol(x, y, self.transform)
+
     def to_streams(self, mode='all'):
         assert mode in ['all', 'tributary'], "Unknow mode, accepted modes are: \
             \'all\', \'tributary\'"
@@ -159,7 +203,7 @@ class StreamNetwork:
         # streams_idx[k] represents stream section starting from ordered_nodes[k]
         # recorded by index in ordered_nodes
         streams_idx = np.empty(self.n_nodes, dtype=object)
-         
+
         for k in range(self.n_nodes-1, -1, -1):
             if downstream[k] == -1:
                 streams_idx[k] = np.array([k])
@@ -172,15 +216,17 @@ class StreamNetwork:
 
         # build streams from stream_idx
         streams = np.empty(len(streams_idx), dtype=object)
+        dx = np.abs(self.transform[0])
+        dy = np.abs(self.transform[4])
         for k in range(len(streams_idx)):
             streams[k] = Stream(coords=ordered_nodes[streams_idx[k]])
-            streams[k].get_upstream_distance(self.dx, self.dy)
+            streams[k].get_upstream_distance(dx, dy)
 
         # sort by length
         length_list = np.array([st.dist_up[0] for st in streams])
         sort_idx = np.argsort(length_list)[::-1]
         streams = streams[sort_idx]
-        streams_idx = streams_idx[sort_idx] # this is for split tributaries
+        streams_idx = streams_idx[sort_idx]  # this is for split tributaries
 
         # split the stream network into tributaries
         if mode == 'tributary':
@@ -201,6 +247,106 @@ class StreamNetwork:
             streams = streams[sort_idx]
 
         return streams
+
+    def to_shp(self):
+        #TODO
+        raise NotImplementedError
+
+    def extract_from_xy(self, x, y, direction='up'):
+        assert direction in ['up', 'down'], "Unknown direction, \'up\' or \'down\'"
+
+        if direction == 'up':
+            return self._extract_from_xy_up(x, y)
+        elif direction == 'down':
+            return self._extract_from_xy_down(x, y)
+
+    def _extract_from_xy_down(self, x, y):
+        index_of = self.index_of
+        downstream = self.downstream
+        ordered_nodes = self.ordered_nodes
+        sub_mask = np.zeros(len(ordered_nodes), dtype=np.int8)
+
+        i, j = self.nearest_to_xy(x, y)
+        k = index_of(i, j)
+        sub_mask[k] = True
+
+        # remove all upstream nodes first
+        new_upstream = copy.deepcopy(self.upstream)
+        new_upstream[k] = -np.ones(9, dtype=INT)
+        new_upstream[k, 0] = 0
+
+        # go downstream
+        while downstream[k] != -1:
+            i, j = ordered_nodes[downstream[k]]
+            k = index_of(i, j)
+            sub_mask[k] = True
+
+        new_ordered_nodes = copy.deepcopy(ordered_nodes[np.where(sub_mask)])
+        new_downstream = copy.deepcopy(downstream[np.where(sub_mask)])
+        new_upstream = new_upstream[np.where(sub_mask)]
+
+        # update index in new_dowstream and new_upstream
+        new_idx = -np.ones(len(ordered_nodes))
+        new_idx[np.where(sub_mask)] = np.arange(len(new_ordered_nodes))
+        # new_idx is essentially a function that convert old index to new index
+        new_downstream[np.where(new_downstream >= 0)] = new_idx[new_downstream[np.where(new_downstream >= 0)]]
+        new_upstream[:, 1:][np.where(new_upstream[:, 1:] >= 0)] = new_idx[new_upstream[:, 1:]
+                                                                          [np.where(new_upstream[:, 1:] >= 0)]]
+
+        sub_network = StreamNetwork(ordered_nodes=new_ordered_nodes,
+                                    downstream=new_downstream,
+                                    upstream=new_upstream)
+
+        sub_network.crs = self.crs
+        sub_network.transform = self.transform
+
+        return sub_network
+
+    def _extract_from_xy_up(self, x, y):
+        index_of = self.index_of
+        upstream = self.upstream
+        ordered_nodes = self.ordered_nodes
+        sub_mask = np.zeros(len(ordered_nodes), dtype=np.int8)
+
+        i, j = self.nearest_to_xy(x, y)
+        k = index_of(i, j)
+        sub_mask[k] = True
+
+        # remove all downstream nodes first
+        new_downstream = copy.deepcopy(self.downstream)
+        new_downstream[k] = -1
+
+        # use a queue to build sub_mask
+        from collections import deque
+        q = deque([k], maxlen=len(ordered_nodes)+10)
+
+        while len(q) > 0:
+            k = q.popleft()
+            for up_node in upstream[k, 1:upstream[k, 0]+1]:
+                sub_mask[up_node] = True
+                q.append(up_node)
+
+        new_ordered_nodes = copy.deepcopy(ordered_nodes[np.where(sub_mask)])
+        new_downstream = new_downstream[np.where(sub_mask)]
+        new_upstream = copy.deepcopy(upstream[np.where(sub_mask)])
+
+        # update index in new_dowstream and new_upstream
+        new_idx = -np.ones(len(ordered_nodes))
+        new_idx[np.where(sub_mask)] = np.arange(len(new_ordered_nodes))
+        # new_idx is essentially a function that convert old index to new index
+        new_downstream[np.where(new_downstream >= 0)] = \
+            new_idx[new_downstream[np.where(new_downstream >= 0)]]
+        new_upstream[:, 1:][np.where(new_upstream[:, 1:] >= 0)] = \
+            new_idx[new_upstream[:, 1:][np.where(new_upstream[:, 1:] >= 0)]]
+
+        sub_network = StreamNetwork(ordered_nodes=new_ordered_nodes,
+                                    downstream=new_downstream,
+                                    upstream=new_upstream)
+
+        sub_network.crs = self.crs
+        sub_network.transform = self.transform
+
+        return sub_network
 
 
 def rowcol_to_xy(row, col, transform: rio.Affine):
@@ -440,10 +586,7 @@ def extract_stream_network_from_receiver(
 
 
 def get_value_along_stream(stream: Stream, grid: GeoArray):
-    i_list = stream.coords[:, 0]
-    j_list = stream.coords[:, 1]
-
-    return grid.data[i_list, j_list]
+    return stream.get_value(grid=grid)
 
 
 def extract_stream(x, y, stream_network: np.ndarray, direction='down'):
@@ -542,7 +685,8 @@ def _add_to_stack(i, j,
                                                   receiver, ordered_nodes,
                                                   stack_size, in_list)
 
-    ordered_nodes[stack_size] = [i, j]
+    ordered_nodes[stack_size, 0] = i
+    ordered_nodes[stack_size, 1] = j
     stack_size += 1
     in_list[i, j] = True
 
