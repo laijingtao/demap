@@ -10,8 +10,10 @@ INT = np.int32
 
 VERBOSE_MODE = True
 
+
 def is_verbose():
     return VERBOSE_MODE
+
 
 def set_verbose(verbose_mode):
     global VERBOSE_MODE

@@ -2,6 +2,7 @@ import rasterio as rio
 
 from .geoarray import GeoArray
 
+
 def load(filename):
     """Read a geospatial data"""
 

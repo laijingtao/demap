@@ -2,7 +2,6 @@ import math
 from rasterio import Affine
 
 
-
 def rowcol_to_xy(row, col, transform: Affine):
     """
     Returns geographic coordinates given GeoArray data (row, col) coordinates.

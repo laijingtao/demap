@@ -26,9 +26,9 @@ def fill_depression(dem: GeoArray):
     """
     if is_verbose():
         print("Filling depressions ...")
-    
+
     print("RichDEM fill depression output:")
-    
+
     dem_rd = dem.to_rdarray()
     # richdem's filldepression does not work properly with int
     dem_rd = dem_rd.astype(dtype=float)
@@ -41,7 +41,6 @@ def fill_depression(dem: GeoArray):
     # means 0 cells triggered this warning.
     dem_rd_filled = richdem.FillDepressions(dem_rd, epsilon=False, in_place=False)
     dem_rd_filled = richdem.ResolveFlats(dem_rd_filled, in_place=False)
-
 
     dem_rd_filled = np.array(dem_rd_filled)
 
@@ -242,12 +241,23 @@ def get_value_along_stream(stream: Stream, grid: GeoArray):
     return stream.get_value(grid=grid)
 
 
-# FIXME - align x y to nearest stream node.
-def extract_catchment_mask(x, y, receiver: GeoArray, ordered_nodes: np.ndarray):
+def extract_catchment_mask(x, y, receiver: GeoArray,
+                           ordered_nodes: np.ndarray,
+                           stream_network: StreamNetwork = None,
+                           **kwargs):
     """
     Return a mask array showing the extent of the catchment for given outlet(x, y).
+    if a stream network is given, the x, y will be changes to the nearest stream node.
     """
-    outlet_i, outlet_j = xy_to_rowcol(x, y, receiver.transform)
+
+    if is_verbose():
+        print("Extracting catchment mask ...")
+    
+    if stream_network is None:
+        print("Warning: no stream_network is given")
+        outlet_i, outlet_j = xy_to_rowcol(x, y, receiver.transform)
+    else:
+        outlet_i, outlet_j = stream_network.nearest_to_xy(x, y)
 
     mask = _build_catchment_mask_impl(outlet_i, outlet_j,
                                       receiver.data, ordered_nodes)
@@ -268,7 +278,7 @@ def process_dem(filename):
     ordered_nodes = build_ordered_array(receiver)
     drainage_area = flow_accumulation(receiver, ordered_nodes)
     stream_network = build_stream_network(receiver, drainage_area)
-    stream_list = stream_network.to_streams()
+    #stream_list = stream_network.to_streams()
 
     result = {
         'dem': dem,
@@ -277,7 +287,6 @@ def process_dem(filename):
         'ordered_nodes': ordered_nodes,
         'drainage_area': drainage_area,
         'stream_network': stream_network,
-        'stream_list': stream_list
     }
 
     return result
