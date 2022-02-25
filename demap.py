@@ -56,7 +56,7 @@ class GeoArray:
 
     def xy_to_rowcol(self, x, y):
         return xy_to_rowcol(x, y, self.transform)
-    
+
     def to_cartopy_crs(self):
         import cartopy.crs as ccrs
         return ccrs.epsg(self.crs.to_epsg())
@@ -66,6 +66,7 @@ class GeoArray:
         data = data.astype(dtype=float)
         data[np.where(data == self.nodata)] = np.nan
         return data
+
 
 class Stream:
     """A stream"""
@@ -143,7 +144,8 @@ class StreamNetwork:
             print("Warning: incomplete input, an empty StreamNetwork was created")
 
     def build_from_receiver_array(self, receiver: GeoArray):
-        if VERBOSE: print("Building stream network ...")
+        if VERBOSE:
+            print("Building stream network ...")
 
         self.transform = copy.deepcopy(receiver.transform)
         self.crs = copy.deepcopy(receiver.crs)
@@ -209,8 +211,9 @@ class StreamNetwork:
         return xy_to_rowcol(x, y, self.transform)
 
     def to_streams(self, mode='all'):
-        if VERBOSE: print("Converting stream network to streams ...")
-        
+        if VERBOSE:
+            print("Converting stream network to streams ...")
+
         assert mode in ['all', 'tributary'], "Unknow mode, accepted modes are: \
             \'all\', \'tributary\'"
 
@@ -268,11 +271,12 @@ class StreamNetwork:
         return streams
 
     def to_shp(self):
-        #TODO
+        # TODO
         raise NotImplementedError
 
     def extract_from_xy(self, x, y, direction='up'):
-        if VERBOSE: print("Extracting stream network ...")
+        if VERBOSE:
+            print("Extracting stream network ...")
         assert direction in ['up', 'down'], "Unknown direction, \'up\' or \'down\'"
 
         if direction == 'up':
@@ -418,7 +422,8 @@ def fill_depression(dem: GeoArray):
     and it produces more pleasing view of stream network
     https://richdem.readthedocs.io/en/latest/flat_resolution.html#
     """
-    if VERBOSE: print("Filling depressions ...")
+    if VERBOSE:
+        print("Filling depressions ...")
     dem_rd = dem.to_rdarray()
     # richdem's filldepression does not work properly with int
     dem_rd = dem_rd.astype(dtype=float)
@@ -452,7 +457,8 @@ def flow_direction(dem: GeoArray):
             Each element is a 1 x 2 array that denotes a pair of indices
             in the associated GeoArray.
     """
-    if VERBOSE: print("Calculating flow direction ...")
+    if VERBOSE:
+        print("Calculating flow direction ...")
 
     flow_dir = _flow_dir_from_richdem(dem)
 
@@ -498,6 +504,7 @@ def _flow_dir_from_richdem(dem: GeoArray):
 
     return flow_dir
 
+
 def build_receiver(flow_dir: GeoArray):
     """Build receiver
     Return:
@@ -505,7 +512,8 @@ def build_receiver(flow_dir: GeoArray):
             Each element is a 1 x 2 array that denotes a pair of indices
             in the associated GeoArray.
     """
-    if VERBOSE: print("Building receiver grid ...")
+    if VERBOSE:
+        print("Building receiver grid ...")
 
     receiver_data = _build_receiver_impl(flow_dir.data)
     receiver = GeoArray(receiver_data,
@@ -524,8 +532,9 @@ def build_ordered_array(receiver: GeoArray):
             denotes a pair of indices in the associated GeoArray.
 
     """
-    if VERBOSE: print("Building ordered array ...")
-    
+    if VERBOSE:
+        print("Building ordered array ...")
+
     ordered_nodes = _build_ordered_array_impl(receiver.data)
 
     return ordered_nodes
@@ -534,7 +543,8 @@ def build_ordered_array(receiver: GeoArray):
 def flow_accumulation(receiver: GeoArray, ordered_nodes: np.ndarray):
     """Flow accumulation
     """
-    if VERBOSE: print("Accumulating flow ...")
+    if VERBOSE:
+        print("Accumulating flow ...")
 
     dx = np.abs(receiver.transform[0])
     dy = np.abs(receiver.transform[4])
@@ -552,7 +562,7 @@ def flow_accumulation(receiver: GeoArray, ordered_nodes: np.ndarray):
 
 
 def build_stream_network(receiver: GeoArray, drainage_area: GeoArray,
-                           drainage_area_threshold=1e6):
+                         drainage_area_threshold=1e6):
 
     receiver_in_stream = copy.deepcopy(receiver)
     # all nodes with drainage_area smaller than the threshold are set as nodata
@@ -563,6 +573,8 @@ def build_stream_network(receiver: GeoArray, drainage_area: GeoArray,
     return stream_network
 
 # old method, do not use this!
+
+
 def extract_stream_network_from_receiver(
         receiver: GeoArray, drainage_area: GeoArray,
         drainage_area_threshold=1e6, mode='all'):
@@ -660,7 +672,7 @@ def process_dem(filename):
         'stream_network': stream_network,
         'stream_list': stream_list
     }
-    
+
     return result
 
 
