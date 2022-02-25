@@ -47,12 +47,23 @@ class GeoArray:
     def xy_to_rowcol(self, x, y):
         return xy_to_rowcol(x, y, self.transform)
 
-    def to_cartopy_crs(self):
+    def cartopy_crs(self):
         import cartopy.crs as ccrs
         return ccrs.epsg(self.crs.to_epsg())
 
-    def for_plot(self):
+    def for_plotting(self):
         data = copy.deepcopy(self.data)
         data = data.astype(dtype=float)
         data[np.where(data == self.nodata)] = np.nan
         return data
+
+    def plotting_extent(self):
+        """
+        Returns an extent for for matplotlib's imshow (left, right, bottom, top)
+        """
+        rows, cols = self.data.shape[0:2]
+        left, top = self.transform * (0, 0)
+        right, bottom = self.transform * (cols, rows)
+        extent = (left, right, bottom, top)
+
+        return extent

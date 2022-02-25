@@ -8,3 +8,4 @@ from .core import (fill_depression,
                    build_stream_network,
                    extract_catchment_mask,
                    process_dem)
+from .helpers import rowcol_to_xy, xy_to_rowcol

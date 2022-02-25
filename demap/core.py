@@ -5,7 +5,7 @@ import richdem
 from ._base import is_verbose
 from .geoarray import GeoArray
 from .stream import Stream, StreamNetwork
-from .helpers import xy_to_rowcol, rowcol_to_xy
+from .helpers import xy_to_rowcol
 from ._impl import (_build_receiver_impl,
                     _build_ordered_array_impl,
                     _flow_accumulation_impl,
@@ -177,66 +177,6 @@ def build_stream_network(receiver: GeoArray, drainage_area: GeoArray,
     return stream_network
 
 
-'''
-# old method, do not use this!
-def extract_stream_network_from_receiver(
-        receiver: GeoArray, drainage_area: GeoArray,
-        drainage_area_threshold=1e6, mode='all'):
-    assert mode in ['all', 'tributary'], "Unknow mode, accepted modes are: \'all\', \'tributary\'"
-    ni, nj, _ = receiver.data.shape
-    dx = np.abs(receiver.transform[0])
-    dy = np.abs(receiver.transform[4])
-
-    valid_receiver_data = copy.deepcopy(receiver.data)
-    # all nodes with drainage_area smaller than the threshold are set as nodata
-    valid_receiver_data[np.where(drainage_area.data < drainage_area_threshold)] = np.array(receiver.nodata)
-
-    is_head = _is_head_impl(valid_receiver_data)
-
-    stream_network = []
-    for i in range(ni):
-        for j in range(nj):
-            if is_head[i, j]:
-                stream_coords = _extract_stream_from_receiver_impl(i, j, valid_receiver_data)
-                stream = Stream(coords=stream_coords)
-                # all stream ends at a outlet, so we do dist_up here
-                # the distance will be the distance to its outlet for each node
-                stream.get_upstream_distance(dx, dy)
-                stream_network.append(stream)
-    stream_network = np.array(stream_network)
-
-    # sort by length
-    length_list = np.array([s.dist_up[0] for s in stream_network])
-    sort_idx = np.argsort(length_list)[::-1]
-    sort_idx = sort_idx.astype(dtype=int)
-    stream_network = stream_network[sort_idx]
-
-    if mode == 'tributary':
-        # split the stream network into tributaries
-        in_network = np.zeros((ni, nj))
-
-        for stream in stream_network:
-            i_list = stream.coords[:, 0]
-            j_list = stream.coords[:, 1]
-            in_network_mask = in_network[i_list, j_list]
-            stream.coords = stream.coords[np.where(np.logical_not(in_network_mask))]
-            stream.dist_up = stream.dist_up[np.where(np.logical_not(in_network_mask))]
-
-            # new coords, put them into network
-            i_list = stream.coords[:, 0]
-            j_list = stream.coords[:, 1]
-            in_network[i_list, j_list] = True
-
-        # sort by length again
-        length_list = np.array([s.dist_up[0] for s in stream_network])
-        sort_idx = np.argsort(length_list)[::-1]
-        sort_idx = sort_idx.astype(dtype=int)
-        stream_network = stream_network[sort_idx]
-
-    return stream_network
-'''
-
-
 def get_value_along_stream(stream: Stream, grid: GeoArray):
     return stream.get_value(grid=grid)
 
@@ -252,7 +192,7 @@ def extract_catchment_mask(x, y, receiver: GeoArray,
 
     if is_verbose():
         print("Extracting catchment mask ...")
-    
+
     if stream_network is None:
         print("Warning: no stream_network is given")
         outlet_i, outlet_j = xy_to_rowcol(x, y, receiver.transform)
