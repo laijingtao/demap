@@ -1,52 +1,11 @@
 import numpy as np
 import copy
+from typing import Union
 
 from .helpers import rowcol_to_xy, xy_to_rowcol
 from ._base import is_verbose, INT
 from .geoarray import GeoArray
 from ._impl import _build_ordered_array_impl
-
-
-class Stream:
-    """A stream"""
-
-    def __init__(self, coords):
-        self.coords = np.array(coords, dtype=INT)  # n by 2 np.ndarray
-        self.dist_up = None  # upstream distance
-        self.attrs = {}
-
-    def __repr__(self):
-        return f'Stream({self.coords})'
-
-    def get_upstream_distance(self, dx, dy):
-        if len(self.coords) == 1:
-            self.dist_up = np.array([0.])
-            return self.dist_up
-
-        dist_up = np.zeros(len(self.coords))
-        dist_down = np.zeros(len(self.coords))
-
-        i_list = self.coords[:, 0]
-        j_list = self.coords[:, 1]
-
-        d_i = np.abs(i_list[:-1] - i_list[1:])
-        d_j = np.abs(j_list[:-1] - j_list[1:])
-        d_dist = np.sqrt(np.power(d_i*dy, 2) + np.power(d_j*dx, 2))
-
-        dist_down[1:] = np.cumsum(d_dist)
-        dist_up = dist_down[-1] - dist_down
-
-        self.dist_up = dist_up
-        return self.dist_up
-
-    def get_value(self, grid: GeoArray, name=None):
-        i_list = self.coords[:, 0]
-        j_list = self.coords[:, 1]
-
-        if name is not None:
-            self.attrs[name] = grid.data[i_list, j_list]
-
-        return grid.data[i_list, j_list]
 
 
 class StreamNetwork:
@@ -81,6 +40,8 @@ class StreamNetwork:
             self.transform = kwargs.get('transform', None)
         else:
             print("Warning: incomplete input, an empty StreamNetwork was created")
+
+        self.attrs = {}
 
     def build_from_receiver_array(self, receiver: GeoArray):
         if is_verbose():
@@ -218,19 +179,19 @@ class StreamNetwork:
             print("Extracting stream network ...")
         assert direction in ['up', 'down'], "Unknown direction, \'up\' or \'down\'"
 
+        row, col = self.nearest_to_xy(x, y)
         if direction == 'up':
-            return self._extract_from_xy_up(x, y)
+            return self._extract_from_rowcol_up(row, col)
         elif direction == 'down':
-            return self._extract_from_xy_down(x, y)
+            return self._extract_from_rowcol_down(row, col)
 
-    def _extract_from_xy_down(self, x, y):
+    def _extract_from_rowcol_down(self, row, col):
         index_of = self.index_of
         downstream = self.downstream
         ordered_nodes = self.ordered_nodes
         sub_mask = np.zeros(len(ordered_nodes), dtype=np.int8)
 
-        i, j = self.nearest_to_xy(x, y)
-        k = index_of(i, j)
+        k = index_of(row, col)
         sub_mask[k] = True
 
         # remove all upstream nodes first
@@ -263,16 +224,19 @@ class StreamNetwork:
         sub_network.crs = self.crs
         sub_network.transform = self.transform
 
+        # extract attrs
+        for key in self.attrs:
+            sub_network.attrs[key] = copy.deepcopy(self.attrs[key][np.where(sub_mask)])
+
         return sub_network
 
-    def _extract_from_xy_up(self, x, y):
+    def _extract_from_rowcol_up(self, row, col):
         index_of = self.index_of
         upstream = self.upstream
         ordered_nodes = self.ordered_nodes
         sub_mask = np.zeros(len(ordered_nodes), dtype=np.int8)
 
-        i, j = self.nearest_to_xy(x, y)
-        k = index_of(i, j)
+        k = index_of(row, col)
         sub_mask[k] = True
 
         # remove all downstream nodes first
@@ -309,4 +273,69 @@ class StreamNetwork:
         sub_network.crs = self.crs
         sub_network.transform = self.transform
 
+        # extract attrs
+        for key in self.attrs:
+            sub_network.attrs[key] = copy.deepcopy(self.attrs[key][np.where(sub_mask)])
+
         return sub_network
+
+
+class Stream:
+    """A stream"""
+
+    def __init__(self, coords):
+        self.coords = np.array(coords, dtype=INT)  # n by 2 np.ndarray
+        self.dist_up = None  # upstream distance
+        self.attrs = {}
+
+    def __repr__(self):
+        return f'Stream({self.coords})'
+
+    def get_upstream_distance(self, dx, dy):
+        if len(self.coords) == 1:
+            self.dist_up = np.array([0.])
+            return self.dist_up
+
+        dist_up = np.zeros(len(self.coords))
+        dist_down = np.zeros(len(self.coords))
+
+        i_list = self.coords[:, 0]
+        j_list = self.coords[:, 1]
+
+        d_i = np.abs(i_list[:-1] - i_list[1:])
+        d_j = np.abs(j_list[:-1] - j_list[1:])
+        d_dist = np.sqrt(np.power(d_i*dy, 2) + np.power(d_j*dx, 2))
+
+        dist_down[1:] = np.cumsum(d_dist)
+        dist_up = dist_down[-1] - dist_down
+
+        self.dist_up = dist_up
+        return self.dist_up
+
+    def get_value(self, data_source: Union[GeoArray, StreamNetwork], attr_name=None):
+        assert isinstance(data_source, (GeoArray, StreamNetwork)), "Unsupported data_source type"
+
+        if isinstance(data_source, GeoArray):
+            i_list = self.coords[:, 0]
+            j_list = self.coords[:, 1]
+            val = data_source.data[i_list, j_list]
+
+        if isinstance(data_source, StreamNetwork):
+            if attr_name is None:
+                raise ValueError("attr_name cannot be None when getting data from StreamNetwork")
+            else:
+                index_of = data_source.index_of
+                val = np.zeros(len(self.coords))
+                for k in range(len(self.coords)):
+                    i, j = self.coords[k]
+                    val[k] = data_source.attrs[attr_name][index_of(i, j)]
+
+        if attr_name is not None:
+            self.attrs[attr_name] = val
+
+        return val
+
+
+def _merge_network(network1: StreamNetwork, network2: StreamNetwork):
+    # TODO
+    raise NotImplementedError

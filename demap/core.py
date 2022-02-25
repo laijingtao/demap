@@ -5,11 +5,33 @@ import richdem
 from ._base import is_verbose
 from .geoarray import GeoArray
 from .stream import Stream, StreamNetwork
-from .helpers import xy_to_rowcol
+from .helpers import xy_to_rowcol, distance_p2p
 from ._impl import (_build_receiver_impl,
                     _build_ordered_array_impl,
                     _flow_accumulation_impl,
                     _build_catchment_mask_impl)
+
+
+def process_dem(filename):
+    from .io import load
+    dem = load(filename)
+    dem_filled = fill_depression(dem)
+    receiver = flow_direction(dem_filled)
+    ordered_nodes = build_ordered_array(receiver)
+    drainage_area = flow_accumulation(receiver, ordered_nodes)
+    stream_network = build_stream_network(receiver, drainage_area)
+    #stream_list = stream_network.to_streams()
+
+    result = {
+        'dem': dem,
+        'dem_filled': dem_filled,
+        'receiver': receiver,
+        'ordered_nodes': ordered_nodes,
+        'drainage_area': drainage_area,
+        'stream_network': stream_network,
+    }
+
+    return result
 
 
 def fill_depression(dem: GeoArray):
@@ -205,28 +227,32 @@ def extract_catchment_mask(x, y, receiver: GeoArray,
     return mask
 
 
-def clip_mask():
+def calculate_chi(drainage_area: GeoArray, stream_network: StreamNetwork,
+                  ref_concavity=0.45, ref_drainage_area=1e6, **kwargs):
+    """
+    Calculate chi and save it in the given StreamNetwork.
+    """
+    if is_verbose():
+        print("Calculating chi ...")
+    drainage_area_data = drainage_area.data
+    ordered_nodes = stream_network.ordered_nodes
+    downstream = stream_network.downstream
+    sn_rowcol_to_xy = stream_network.rowcol_to_xy
+
+    chi = np.zeros(len(ordered_nodes))
+
+    for k in range(len(ordered_nodes)-1, -1, -1):
+        if downstream[k] != -1:
+            i, j = ordered_nodes[k]
+            r_i, r_j = ordered_nodes[downstream[k]]
+            x1, y1 = sn_rowcol_to_xy(i, j)
+            x2, y2 = sn_rowcol_to_xy(r_i, r_j)
+            chi[k] = chi[downstream[k]] + (ref_drainage_area/drainage_area_data[i, j])**ref_concavity\
+                * distance_p2p(x1, y1, x2, y2)
+
+    stream_network.attrs['chi'] = chi
+
+
+def calculate_chi_grid():
     # TODO
-    raise NotImplementedError
-
-
-def process_dem(filename):
-    from .io import load
-    dem = load(filename)
-    dem_filled = fill_depression(dem)
-    receiver = flow_direction(dem_filled)
-    ordered_nodes = build_ordered_array(receiver)
-    drainage_area = flow_accumulation(receiver, ordered_nodes)
-    stream_network = build_stream_network(receiver, drainage_area)
-    #stream_list = stream_network.to_streams()
-
-    result = {
-        'dem': dem,
-        'dem_filled': dem_filled,
-        'receiver': receiver,
-        'ordered_nodes': ordered_nodes,
-        'drainage_area': drainage_area,
-        'stream_network': stream_network,
-    }
-
-    return result
+    pass
