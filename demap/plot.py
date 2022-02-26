@@ -9,8 +9,10 @@ def show_grid(ax: Axes, grid: GeoGrid, **kwargs):
     """
     Plot GeoGrid using matplotlib imshow.
     """
-    assert isinstance(ax, Axes), TypeError("A matplotlib ax must be given")
-    assert isinstance(grid, GeoGrid), TypeError("Wrong grid data type")
+    if not isinstance(ax, Axes):
+        raise TypeError("A matplotlib ax must be given")
+    if not isinstance(grid, GeoGrid):
+        raise TypeError("Wrong grid data type")
     
     data_plt = grid.for_plotting()
     extent = grid.plotting_extent()
@@ -23,6 +25,9 @@ def show_grid(ax: Axes, grid: GeoGrid, **kwargs):
 def show_stream(ax: Axes,
                 streams: Union[np.ndarray, list, StreamNetwork, Stream],
                 **kwargs):
+    
+    if not isinstance(ax, Axes):
+        raise TypeError("A matplotlib ax must be given")
 
     if isinstance(streams, StreamNetwork):
         stream_list = streams.to_streams()

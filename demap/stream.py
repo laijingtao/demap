@@ -114,8 +114,8 @@ class StreamNetwork:
         if is_verbose():
             print("Converting stream network to streams ...")
 
-        assert mode in ['all', 'tributary'], "Unknow mode, accepted modes are: \
-            \'all\', \'tributary\'"
+        if mode not in ['all', 'tributary']:
+            raise ValueError("Unknow mode, accepted modes are: \'all\', \'tributary\'")
 
         ordered_nodes = self.ordered_nodes
         upstream = self.upstream
@@ -175,7 +175,8 @@ class StreamNetwork:
     def extract_from_xy(self, x, y, direction='up'):
         if is_verbose():
             print("Extracting stream network ...")
-        assert direction in ['up', 'down'], "Unknown direction, \'up\' or \'down\'"
+        if direction not in ['up', 'down']:
+            raise ValueError("Unknown direction, \'up\' or \'down\'")
 
         row, col = self.nearest_to_xy(x, y)
         if direction == 'up':
@@ -327,7 +328,8 @@ class Stream:
         return self.dist_up
 
     def get_value(self, data_source: Union[GeoGrid, StreamNetwork], attr_name=None):
-        assert isinstance(data_source, (GeoGrid, StreamNetwork)), "Unsupported data_source type"
+        if not isinstance(data_source, (GeoGrid, StreamNetwork)):
+            raise TypeError("Unsupported data_source type")
 
         if isinstance(data_source, GeoGrid):
             i_list = self.coords[:, 0]
