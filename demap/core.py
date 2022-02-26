@@ -3,7 +3,7 @@ import numpy as np
 import richdem
 
 from ._base import is_verbose
-from .geoarray import GeoArray
+from .geogrid import GeoGrid
 from .stream import Stream, StreamNetwork
 from .helpers import xy_to_rowcol, distance_p2p
 from ._impl import (_build_receiver_impl,
@@ -34,7 +34,7 @@ def process_dem(filename):
     return result
 
 
-def fill_depression(dem: GeoArray):
+def fill_depression(dem: GeoGrid):
     """Fill dipression using richDEM
 
     There are two ways to do this (see below) and Barnes2014 is the default.
@@ -66,21 +66,21 @@ def fill_depression(dem: GeoArray):
 
     dem_rd_filled = np.array(dem_rd_filled)
 
-    dem_filled = GeoArray(dem_rd_filled,
+    dem_filled = GeoGrid(dem_rd_filled,
                           copy.deepcopy(dem.crs), copy.deepcopy(dem.transform),
                           copy.deepcopy(dem.metadata))
 
     return dem_filled
 
 
-def flow_direction(dem: GeoArray):
+def flow_direction(dem: GeoGrid):
     """Calculate flow direction using richDEM
     Note: only support D8 algorithm for now.
 
     Return:
-        receiver: an GeoArray that stores receiver node information.
+        receiver: an GeoGrid that stores receiver node information.
             Each element is a 1 x 2 array that denotes a pair of indices
-            in the associated GeoArray.
+            in the associated GeoGrid.
     """
     if is_verbose():
         print("Calculating flow direction ...")
@@ -92,10 +92,10 @@ def flow_direction(dem: GeoArray):
     return receiver
 
 
-def _flow_dir_from_richdem(dem: GeoArray):
+def _flow_dir_from_richdem(dem: GeoGrid):
     """
     Return:
-        flow_dir: a GeoArray contain the flow direction information.
+        flow_dir: a GeoGrid contain the flow direction information.
             -1 -- nodata
             0 -- this node produces no flow, i.e., local sink
             1-8 -- flow direction coordinates
@@ -124,38 +124,38 @@ def _flow_dir_from_richdem(dem: GeoArray):
     flow_dir_data[np.where(node_info == -2)] = nodata_flow_dir
     flow_dir_data[np.where(node_info == -1)] = 0
 
-    flow_dir = GeoArray(flow_dir_data,
+    flow_dir = GeoGrid(flow_dir_data,
                         copy.deepcopy(dem.crs), copy.deepcopy(dem.transform),
                         copy.deepcopy(dem.metadata), nodata=nodata_flow_dir)
 
     return flow_dir
 
 
-def build_receiver(flow_dir: GeoArray):
+def build_receiver(flow_dir: GeoGrid):
     """Build receiver
     Return:
-        receiver: an GeoArray that stores receiver node information.
+        receiver: an GeoGrid that stores receiver node information.
             Each element is a 1 x 2 array that denotes a pair of indices
-            in the associated GeoArray.
+            in the associated GeoGrid.
     """
     if is_verbose():
         print("Building receiver grid ...")
 
     receiver_data = _build_receiver_impl(flow_dir.data)
-    receiver = GeoArray(receiver_data,
+    receiver = GeoGrid(receiver_data,
                         copy.deepcopy(flow_dir.crs), copy.deepcopy(flow_dir.transform),
                         copy.deepcopy(flow_dir.metadata), nodata=[-1, -1])
 
     return receiver
 
 
-def build_ordered_array(receiver: GeoArray):
+def build_ordered_array(receiver: GeoGrid):
     """Build an ordered array.
 
     Return:
         ordered_nodes: in this array, upstream point is always in front of
             its downstream point. Each element is a 1 x 2 array that
-            denotes a pair of indices in the associated GeoArray.
+            denotes a pair of indices in the associated GeoGrid.
 
     """
     if is_verbose():
@@ -166,7 +166,7 @@ def build_ordered_array(receiver: GeoArray):
     return ordered_nodes
 
 
-def flow_accumulation(receiver: GeoArray, ordered_nodes: np.ndarray):
+def flow_accumulation(receiver: GeoGrid, ordered_nodes: np.ndarray):
     """Flow accumulation
     """
     if is_verbose():
@@ -180,14 +180,14 @@ def flow_accumulation(receiver: GeoArray, ordered_nodes: np.ndarray):
     nodata = -1
     drainage_area_data[np.where(receiver.data[:, :, 0] == receiver.nodata[0])] = nodata
 
-    drainage_area = GeoArray(drainage_area_data,
+    drainage_area = GeoGrid(drainage_area_data,
                              copy.deepcopy(receiver.crs), copy.deepcopy(receiver.transform),
                              copy.deepcopy(receiver.metadata), nodata=nodata)
 
     return drainage_area
 
 
-def build_stream_network(receiver: GeoArray, drainage_area: GeoArray,
+def build_stream_network(receiver: GeoGrid, drainage_area: GeoGrid,
                          drainage_area_threshold=1e6):
 
     receiver_in_stream = copy.deepcopy(receiver)
@@ -199,11 +199,11 @@ def build_stream_network(receiver: GeoArray, drainage_area: GeoArray,
     return stream_network
 
 
-def get_value_along_stream(stream: Stream, grid: GeoArray):
+def get_value_along_stream(stream: Stream, grid: GeoGrid):
     return stream.get_value(grid=grid)
 
 
-def extract_catchment_mask(x, y, receiver: GeoArray,
+def extract_catchment_mask(x, y, receiver: GeoGrid,
                            ordered_nodes: np.ndarray,
                            stream_network: StreamNetwork = None,
                            **kwargs):
@@ -227,7 +227,7 @@ def extract_catchment_mask(x, y, receiver: GeoArray,
     return mask
 
 
-def calculate_chi(drainage_area: GeoArray, stream_network: StreamNetwork,
+def calculate_chi(drainage_area: GeoGrid, stream_network: StreamNetwork,
                   ref_concavity=0.45, ref_drainage_area=1e6, **kwargs):
     """
     Calculate chi and save it in the given StreamNetwork.

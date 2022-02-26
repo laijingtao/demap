@@ -5,8 +5,8 @@ import richdem
 from .helpers import rowcol_to_xy, xy_to_rowcol
 
 
-class GeoArray:
-    """A array with georeferencing and metadata"""
+class GeoGrid:
+    """A grid with georeferencing and metadata"""
 
     def __init__(self, data, crs, transform, metadata, nodata=None):
         self.data = data
@@ -30,10 +30,10 @@ class GeoArray:
             print('Warning: nodata value is None.')
 
     def __str__(self):
-        return f'GeoArray:\n{self.data}\nCRS: {self.crs}\nTransform: {self.transform}'
+        return f'GeoGrid:\n{self.data}\nCRS: {self.crs}\nTransform: {self.transform}'
 
     def __repr__(self):
-        return f'GeoArray({self.data})'
+        return f'GeoGrid({self.data})'
 
     def to_rdarray(self):
         out_rd = richdem.rdarray(self.data, no_data=self.nodata)

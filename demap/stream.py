@@ -4,7 +4,7 @@ from typing import Union
 
 from .helpers import rowcol_to_xy, xy_to_rowcol
 from ._base import is_verbose, INT
-from .geoarray import GeoArray
+from .geogrid import GeoGrid
 from ._impl import _build_ordered_array_impl
 
 
@@ -27,7 +27,7 @@ class StreamNetwork:
     if `
     """
 
-    def __init__(self, receiver: GeoArray = None, **kwargs):
+    def __init__(self, receiver: GeoGrid = None, **kwargs):
         if receiver is not None:
             self.build_from_receiver_array(receiver)
         elif all(k in kwargs for k in ('ordered_nodes', 'downstream', 'upstream')):
@@ -43,7 +43,7 @@ class StreamNetwork:
 
         self.attrs = {}
 
-    def build_from_receiver_array(self, receiver: GeoArray):
+    def build_from_receiver_array(self, receiver: GeoGrid):
         if is_verbose():
             print("Building stream network ...")
 
@@ -138,11 +138,9 @@ class StreamNetwork:
 
         # build streams from stream_idx
         streams = np.empty(len(streams_idx), dtype=object)
-        dx = np.abs(self.transform[0])
-        dy = np.abs(self.transform[4])
         for k in range(len(streams_idx)):
-            streams[k] = Stream(coords=ordered_nodes[streams_idx[k]])
-            streams[k].get_upstream_distance(dx, dy)
+            streams[k] = Stream(coords=ordered_nodes[streams_idx[k]],
+                                crs=self.crs, transform=self.transform)
 
         # sort by length
         length_list = np.array([st.dist_up[0] for st in streams])
@@ -283,15 +281,29 @@ class StreamNetwork:
 class Stream:
     """A stream"""
 
-    def __init__(self, coords):
+    def __init__(self, coords, **kwargs):
         self.coords = np.array(coords, dtype=INT)  # n by 2 np.ndarray
         self.dist_up = None  # upstream distance
+        self.crs = kwargs.get('crs', None)
+        self.transform = kwargs.get('transform', None)
+        if self.transform is not None:
+            self.get_upstream_distance()
         self.attrs = {}
 
     def __repr__(self):
         return f'Stream({self.coords})'
 
-    def get_upstream_distance(self, dx, dy):
+    def rowcol_to_xy(self, row, col):
+        return rowcol_to_xy(row, col, self.transform)
+
+    def xy_to_rowcol(self, x, y):
+        return xy_to_rowcol(x, y, self.transform)
+
+    def get_upstream_distance(self):
+        if self.transform is None:
+            raise RuntimeError("No transform info for this stream,\
+                cannot calculate the distance")
+        
         if len(self.coords) == 1:
             self.dist_up = np.array([0.])
             return self.dist_up
@@ -302,9 +314,11 @@ class Stream:
         i_list = self.coords[:, 0]
         j_list = self.coords[:, 1]
 
-        d_i = np.abs(i_list[:-1] - i_list[1:])
-        d_j = np.abs(j_list[:-1] - j_list[1:])
-        d_dist = np.sqrt(np.power(d_i*dy, 2) + np.power(d_j*dx, 2))
+        x_list, y_list = self.rowcol_to_xy(i_list, j_list)
+
+        d_x = np.abs(x_list[:-1] - x_list[1:])
+        d_y = np.abs(y_list[:-1] - y_list[1:])
+        d_dist = np.sqrt(np.power(d_x, 2) + np.power(d_y, 2))
 
         dist_down[1:] = np.cumsum(d_dist)
         dist_up = dist_down[-1] - dist_down
@@ -312,10 +326,10 @@ class Stream:
         self.dist_up = dist_up
         return self.dist_up
 
-    def get_value(self, data_source: Union[GeoArray, StreamNetwork], attr_name=None):
-        assert isinstance(data_source, (GeoArray, StreamNetwork)), "Unsupported data_source type"
+    def get_value(self, data_source: Union[GeoGrid, StreamNetwork], attr_name=None):
+        assert isinstance(data_source, (GeoGrid, StreamNetwork)), "Unsupported data_source type"
 
-        if isinstance(data_source, GeoArray):
+        if isinstance(data_source, GeoGrid):
             i_list = self.coords[:, 0]
             j_list = self.coords[:, 1]
             val = data_source.data[i_list, j_list]

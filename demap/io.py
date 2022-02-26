@@ -1,6 +1,6 @@
 import rasterio as rio
 
-from .geoarray import GeoArray
+from .geogrid import GeoGrid
 
 
 def load(filename):
@@ -12,6 +12,6 @@ def load(filename):
         transform = dataset.meta['transform']
         metadata = dataset.meta
 
-    outdata = GeoArray(data, crs, transform, metadata)
+    outdata = GeoGrid(data, crs, transform, metadata)
 
     return outdata

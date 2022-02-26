@@ -1,5 +1,5 @@
 from ._base import set_verbose
-from .geoarray import GeoArray
+from .geogrid import GeoGrid
 from .stream import Stream, StreamNetwork
 from .core import (process_dem,
                    fill_depression,
@@ -10,3 +10,4 @@ from .core import (process_dem,
                    extract_catchment_mask,
                    calculate_chi)
 from .helpers import rowcol_to_xy, xy_to_rowcol
+from .plot import show_grid, show_stream
