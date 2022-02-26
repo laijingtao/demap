@@ -170,7 +170,7 @@ def _calculate_chi_from_receiver_impl(drainage_area_data: np.ndarray,
                                       receiver_data: np.ndarray,
                                       ordered_nodes: np.ndarray,
                                       ref_concavity, ref_drainage_area, affine_matrix):
-    
+
     nrows, ncols, _ = receiver_data.shape
 
     chi = -np.ones((nrows, ncols))

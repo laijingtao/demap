@@ -1,4 +1,5 @@
 import copy
+from ctypes.wintypes import INT
 import numpy as np
 import richdem
 
@@ -68,8 +69,8 @@ def fill_depression(dem: GeoGrid):
     dem_rd_filled = np.array(dem_rd_filled)
 
     dem_filled = GeoGrid(dem_rd_filled,
-                          copy.deepcopy(dem.crs), copy.deepcopy(dem.transform),
-                          copy.deepcopy(dem.metadata))
+                         copy.deepcopy(dem.crs), copy.deepcopy(dem.transform),
+                         copy.deepcopy(dem.metadata))
 
     return dem_filled
 
@@ -126,8 +127,8 @@ def _flow_dir_from_richdem(dem: GeoGrid):
     flow_dir_data[np.where(node_info == -1)] = 0
 
     flow_dir = GeoGrid(flow_dir_data,
-                        copy.deepcopy(dem.crs), copy.deepcopy(dem.transform),
-                        copy.deepcopy(dem.metadata), nodata=nodata_flow_dir)
+                       copy.deepcopy(dem.crs), copy.deepcopy(dem.transform),
+                       copy.deepcopy(dem.metadata), nodata=nodata_flow_dir)
 
     return flow_dir
 
@@ -145,8 +146,8 @@ def build_receiver(flow_dir: GeoGrid):
 
     receiver_data = _build_receiver_impl(flow_dir.data)
     receiver = GeoGrid(receiver_data,
-                        copy.deepcopy(flow_dir.crs), copy.deepcopy(flow_dir.transform),
-                        copy.deepcopy(flow_dir.metadata), nodata=[-1, -1])
+                       copy.deepcopy(flow_dir.crs), copy.deepcopy(flow_dir.transform),
+                       copy.deepcopy(flow_dir.metadata), nodata=[-1, -1])
 
     return receiver
 
@@ -183,8 +184,8 @@ def flow_accumulation(receiver: GeoGrid, ordered_nodes: np.ndarray):
     drainage_area_data[np.where(receiver.data[:, :, 0] == receiver.nodata[0])] = nodata
 
     drainage_area = GeoGrid(drainage_area_data,
-                             copy.deepcopy(receiver.crs), copy.deepcopy(receiver.transform),
-                             copy.deepcopy(receiver.metadata), nodata=nodata)
+                            copy.deepcopy(receiver.crs), copy.deepcopy(receiver.transform),
+                            copy.deepcopy(receiver.metadata), nodata=nodata)
 
     return drainage_area
 
@@ -236,6 +237,8 @@ def calculate_chi(drainage_area: GeoGrid, stream_network: StreamNetwork,
     """
     if is_verbose():
         print("Calculating chi ...")
+
+    """
     drainage_area_data = drainage_area.data
     ordered_nodes = stream_network.ordered_nodes
     downstream = stream_network.downstream
@@ -251,6 +254,33 @@ def calculate_chi(drainage_area: GeoGrid, stream_network: StreamNetwork,
             x2, y2 = sn_rowcol_to_xy(r_i, r_j)
             chi[k] = chi[downstream[k]] + (ref_drainage_area/drainage_area_data[i, j])**ref_concavity\
                 * distance_p2p(x1, y1, x2, y2)
+    """
+    ordered_nodes = stream_network.ordered_nodes
+    downstream = stream_network.downstream
+
+    # build a pseudo receiver, # its shape may not be the same as original receiver
+    pseudo_ni = np.max(ordered_nodes[:, 0]) + 1
+    pseudo_nj = np.max(ordered_nodes[:, 1]) + 1
+    pseudo_receiver = -np.ones((pseudo_ni, pseudo_nj, 2), dtype=INT)
+
+    for k in range(len(ordered_nodes)):
+        i, j = ordered_nodes[k]
+        if downstream[k] != -1:
+            r_i, r_j = ordered_nodes[downstream[k]]
+        else:
+            r_i, r_j = i, j
+        pseudo_receiver[i, j] = [r_i, r_j]
+
+    affine_matrix = transform_to_ndarray(stream_network.transform)
+
+    chi_grid = _calculate_chi_from_receiver_impl(drainage_area.data,
+                                                 pseudo_receiver, ordered_nodes,
+                                                 ref_concavity, ref_drainage_area,
+                                                 affine_matrix)
+
+    i_list = ordered_nodes[:, 0]
+    j_list = ordered_nodes[:, 1]
+    chi = chi_grid[i_list, j_list]
 
     stream_network.attrs['chi'] = chi
 
@@ -261,18 +291,16 @@ def calculate_chi_grid(drainage_area: GeoGrid, receiver: GeoGrid,
 
     if is_verbose():
         print("Calculating chi ...")
-    
+
     affine_matrix = transform_to_ndarray(drainage_area.transform)
 
-    chi_data = _calculate_chi_from_receiver_impl(drainage_area.data, receiver.data,
-                                            ordered_nodes, ref_concavity, ref_drainage_area,
-                                            affine_matrix)
+    chi_data = _calculate_chi_from_receiver_impl(drainage_area.data,
+                                                 receiver.data, ordered_nodes,
+                                                 ref_concavity, ref_drainage_area,
+                                                 affine_matrix)
 
     chi = GeoGrid(chi_data, copy.deepcopy(receiver.crs),
                   copy.deepcopy(receiver.transform),
                   copy.deepcopy(receiver.metadata), nodata=-1)
 
     return chi
-
-
-
