@@ -163,3 +163,28 @@ def _build_catchment_mask_impl(outlet_i, outlet_j, receiver: np.ndarray, ordered
             mask[i, j] = 1
 
     return mask
+
+
+@_speed_up
+def _calculate_chi_from_receiver_impl(drainage_area_data: np.ndarray,
+                                      receiver_data: np.ndarray,
+                                      ordered_nodes: np.ndarray,
+                                      ref_concavity, ref_drainage_area, affine_matrix):
+    
+    nrows, ncols, _ = receiver_data.shape
+
+    chi = -np.ones((nrows, ncols))
+
+    for k in range(len(ordered_nodes)-1, -1, -1):
+        i, j = ordered_nodes[k]
+        r_i, r_j = receiver_data[i, j]
+        if r_i != i or r_j != j:
+            x1, y1, _ = np.dot(affine_matrix, np.array([j+0.5, i+0.5, 1]))
+            x2, y2, _ = np.dot(affine_matrix, np.array([r_j+0.5, r_i+0.5, 1]))
+            dist = np.sqrt(np.power(x1 - x2, 2) + np.power(y1 - y2, 2))
+            chi[i, j] = chi[r_i, r_j] +\
+                (ref_drainage_area/drainage_area_data[i, j])**ref_concavity * dist
+        else:
+            chi[i, j] = 0
+
+    return chi

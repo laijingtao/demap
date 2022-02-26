@@ -303,7 +303,7 @@ class Stream:
         if self.transform is None:
             raise RuntimeError("No transform info for this stream,\
                 cannot calculate the distance")
-        
+
         if len(self.coords) == 1:
             self.dist_up = np.array([0.])
             return self.dist_up

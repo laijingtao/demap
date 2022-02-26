@@ -5,11 +5,12 @@ import richdem
 from ._base import is_verbose
 from .geogrid import GeoGrid
 from .stream import Stream, StreamNetwork
-from .helpers import xy_to_rowcol, distance_p2p
+from .helpers import xy_to_rowcol, distance_p2p, transform_to_ndarray
 from ._impl import (_build_receiver_impl,
                     _build_ordered_array_impl,
                     _flow_accumulation_impl,
-                    _build_catchment_mask_impl)
+                    _build_catchment_mask_impl,
+                    _calculate_chi_from_receiver_impl)
 
 
 def process_dem(filename):
@@ -135,8 +136,9 @@ def build_receiver(flow_dir: GeoGrid):
     """Build receiver
     Return:
         receiver: an GeoGrid that stores receiver node information.
-            Each element is a 1 x 2 array that denotes a pair of indices
+            Each element is a 1 x 2 array that denotes a pair of coords
             in the associated GeoGrid.
+            If receiver[i, j] = i, j, then this is an outlet or local sink
     """
     if is_verbose():
         print("Building receiver grid ...")
@@ -253,6 +255,24 @@ def calculate_chi(drainage_area: GeoGrid, stream_network: StreamNetwork,
     stream_network.attrs['chi'] = chi
 
 
-def calculate_chi_grid():
-    # TODO
-    pass
+def calculate_chi_grid(drainage_area: GeoGrid, receiver: GeoGrid,
+                       ordered_nodes: np.ndarray,
+                       ref_concavity=0.45, ref_drainage_area=1e6, **kwargs):
+
+    if is_verbose():
+        print("Calculating chi ...")
+    
+    affine_matrix = transform_to_ndarray(drainage_area.transform)
+
+    chi_data = _calculate_chi_from_receiver_impl(drainage_area.data, receiver.data,
+                                            ordered_nodes, ref_concavity, ref_drainage_area,
+                                            affine_matrix)
+
+    chi = GeoGrid(chi_data, copy.deepcopy(receiver.crs),
+                  copy.deepcopy(receiver.transform),
+                  copy.deepcopy(receiver.metadata), nodata=-1)
+
+    return chi
+
+
+
