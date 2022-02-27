@@ -14,9 +14,10 @@ from ._impl import (_build_receiver_impl,
                     _calculate_chi_from_receiver_impl)
 
 
-def process_dem(filename):
-    from .io import load
-    dem = load(filename)
+def process_dem(dem):
+    if isinstance(dem, str):
+        from .io import load
+        dem = load(dem)
     dem_filled = fill_depression(dem)
     receiver = flow_direction(dem_filled)
     ordered_nodes = build_ordered_array(receiver)
@@ -51,12 +52,11 @@ def fill_depression(dem: GeoGrid):
     if is_verbose():
         print("Filling depressions ...")
 
-    print("RichDEM fill depression output:")
-
     dem_rd = dem.to_rdarray()
     # richdem's filldepression does not work properly with int
     dem_rd = dem_rd.astype(dtype=float)
 
+    print("RichDEM fill depression output:")
     # One way to do this is to use simple epsilon filling.
     #dem_rd_filled = richdem.FillDepressions(dem_rd, epsilon=True, in_place=False)
 
@@ -70,7 +70,7 @@ def fill_depression(dem: GeoGrid):
 
     dem_filled = GeoGrid(dem_rd_filled,
                          copy.deepcopy(dem.crs), copy.deepcopy(dem.transform),
-                         copy.deepcopy(dem.metadata))
+                         copy.deepcopy(dem.metadata), nodata=dem.nodata)
 
     return dem_filled
 

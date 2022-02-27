@@ -36,10 +36,20 @@ class GeoGrid:
         return f'GeoGrid({self.data})'
 
     def to_rdarray(self):
-        out_rd = richdem.rdarray(self.data, no_data=self.nodata)
-        out_rd.geotransform = self.transform.to_gdal()
+        if self._valid_for_richdem():
+            out_rd = richdem.rdarray(self.data, no_data=self.nodata)
+            out_rd.geotransform = self.transform.to_gdal()
 
-        return out_rd
+            return out_rd
+    
+    def _valid_for_richdem(self):
+        if (self.nodata is None) or np.isnan(self.nodata):
+            raise ValueError("Invalid nodata value for richdem: {}".format(self.nodata))
+        if np.sum(np.isnan(self.data)) > 0:
+            raise ValueError("Invalid input for richdem: the grid contains nan value")
+
+        return True
+        
 
     def rowcol_to_xy(self, row, col):
         return rowcol_to_xy(row, col, self.transform)
