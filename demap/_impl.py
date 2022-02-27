@@ -175,6 +175,8 @@ def _calculate_chi_from_receiver_impl(drainage_area_data: np.ndarray,
 
     chi = -np.ones((nrows, ncols))
 
+    dchi = np.power(ref_drainage_area/drainage_area_data, ref_concavity)
+
     for k in range(len(ordered_nodes)-1, -1, -1):
         i, j = ordered_nodes[k]
         r_i, r_j = receiver_data[i, j]
@@ -182,8 +184,9 @@ def _calculate_chi_from_receiver_impl(drainage_area_data: np.ndarray,
             x1, y1, _ = np.dot(affine_matrix, np.array([j+0.5, i+0.5, 1]))
             x2, y2, _ = np.dot(affine_matrix, np.array([r_j+0.5, r_i+0.5, 1]))
             dist = np.sqrt(np.power(x1 - x2, 2) + np.power(y1 - y2, 2))
-            chi[i, j] = chi[r_i, r_j] +\
-                (ref_drainage_area/drainage_area_data[i, j])**ref_concavity * dist
+            #chi[i, j] = chi[r_i, r_j] +\
+            #    (ref_drainage_area/drainage_area_data[i, j])**ref_concavity * dist
+            chi[i, j] = chi[r_i, r_j] + (dchi[i, j] + dchi[r_i, r_j])/2 * dist
         else:
             chi[i, j] = 0
 

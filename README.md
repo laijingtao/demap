@@ -2,5 +2,5 @@
 
 Author: Jingtao Lai (lai@gfz-potsdam.de)
 
-`DEMAP` is a python package that provides a set of topographic analysis tools
-for geomorphologists.
+`DEMAP` is a set of python-based topographic analysis tools that help
+geomorphologists decode information from digital maps.
