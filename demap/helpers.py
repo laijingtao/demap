@@ -53,6 +53,7 @@ def interp_along_line(grid: np.ndarray, row1, col1, row2, col2):
 
     return zi, i_list, j_list
 
+
 def nearest_along_line(grid: np.ndarray, row1, col1, row2, col2):
     """
     Return a profile along line, using nearest neighbor sampling.

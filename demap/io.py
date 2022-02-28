@@ -25,8 +25,8 @@ def network_to_shp(stream_network: StreamNetwork,
     stream_list = stream_network.to_streams(mode='tributary')
     line_list = []
     for stream in stream_list:
-        i_list = stream.coords[:, 0]
-        j_list = stream.coords[:, 1]
+        i_list = stream.ordered_nodes[:, 0]
+        j_list = stream.ordered_nodes[:, 1]
 
         x_list, y_list = stream.rowcol_to_xy(i_list, j_list)
 

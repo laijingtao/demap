@@ -10,6 +10,7 @@ from .core import (process_dem,
                    extract_catchment_mask,
                    calculate_chi,
                    calculate_chi_grid)
+from .valley import valley_xsec_at_xy, xsec_along_valley
 from .helpers import rowcol_to_xy, xy_to_rowcol
 from .plot import show_grid, show_stream
 from .io import load, network_to_shp
