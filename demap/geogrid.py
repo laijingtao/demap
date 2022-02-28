@@ -2,7 +2,7 @@ import numpy as np
 import copy
 import richdem
 
-from .helpers import rowcol_to_xy, xy_to_rowcol
+from .helpers import rowcol_to_xy, xy_to_rowcol, interp_along_line, nearest_along_line
 
 
 class GeoGrid:
@@ -77,3 +77,21 @@ class GeoGrid:
         extent = (left, right, bottom, top)
 
         return extent
+
+    def profile_along_line(self, x1, y1, x2, y2, interpolation=True):
+        row1, col1 = self.xy_to_rowcol(x1, y1)
+        row2, col2 = self.xy_to_rowcol(x2, y2)
+        
+        if interpolation:
+            z, i_list, j_list = interp_along_line(self.data, row1, col1, row2, col2)
+        else:
+            z, i_list, j_list = nearest_along_line(self.data, row1, col1, row2, col2)
+        
+        x_list, y_list = self.rowcol_to_xy(i_list, j_list)
+        dx = x_list[1:] - x_list[:-1]
+        dy = y_list[1:] - y_list[:-1]
+        d_dist = np.hypot(dx, dy)
+        dist = np.zeros(len(x_list))
+        dist[1:] = np.cumsum(d_dist)
+
+        return z, dist
