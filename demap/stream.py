@@ -8,7 +8,138 @@ from .geogrid import GeoGrid
 from ._impl import _build_ordered_array_impl
 
 
-class StreamNetwork:
+class _StreamBase:
+    """Base class for stream and stream network"""
+
+    def __init__(self):
+        self.ordered_nodes = None
+        self.crs = None
+        self.transform = None
+
+    def rowcol_to_xy(self, row, col):
+        return rowcol_to_xy(row, col, self.transform)
+
+    def xy_to_rowcol(self, x, y):
+        return xy_to_rowcol(x, y, self.transform)
+
+    def _build_hashmap(self):
+        assert isinstance(self.ordered_nodes, np.ndarray), 'Missing ordered_nodes or wrong type'
+
+        ordered_nodes = self.ordered_nodes
+        nodes_hash = {}
+        for k in range(len(ordered_nodes)):
+            row, col = ordered_nodes[k]
+            nodes_hash['{}_{}'.format(int(row), int(col))] = k
+
+        self._nodes_hash = nodes_hash
+
+    def index_of(self, row, col):
+        return self._nodes_hash['{}_{}'.format(int(row), int(col))]
+
+    def nearest_to_xy(self, x, y):
+        """
+        Return the stream node nearest to given x, y geographic coordinates.
+        """
+        row, col = self.xy_to_rowcol(x, y)
+        d_i = np.abs(self.ordered_nodes[:, 0] - row)
+        d_j = np.abs(self.ordered_nodes[:, 1] - col)
+        dist = np.sqrt(np.power(d_i, 2) + np.power(d_j, 2))
+        node = self.ordered_nodes[np.argmin(dist)]
+
+        return node
+
+
+class Stream(_StreamBase):
+    """A stream"""
+
+    def __init__(self, ordered_nodes, **kwargs):
+        self.ordered_nodes = np.array(ordered_nodes, dtype=INT)  # n by 2 np.ndarray
+        self._build_hashmap()
+        self.dist_up = None  # upstream distance
+        self.crs = kwargs.get('crs', None)
+        self.transform = kwargs.get('transform', None)
+        if self.transform is not None:
+            self.get_upstream_distance()
+        self.attrs = {}
+
+    def __repr__(self):
+        return f'Stream({self.ordered_nodes})'
+
+    def get_upstream_distance(self):
+        if self.transform is None:
+            raise RuntimeError("No transform info for this stream,\
+                cannot calculate the distance")
+
+        if len(self.ordered_nodes) == 1:
+            self.dist_up = np.array([0.])
+            return self.dist_up
+
+        dist_up = np.zeros(len(self.ordered_nodes))
+        dist_down = np.zeros(len(self.ordered_nodes))
+
+        i_list = self.ordered_nodes[:, 0]
+        j_list = self.ordered_nodes[:, 1]
+
+        x_list, y_list = self.rowcol_to_xy(i_list, j_list)
+
+        d_x = np.abs(x_list[:-1] - x_list[1:])
+        d_y = np.abs(y_list[:-1] - y_list[1:])
+        d_dist = np.sqrt(np.power(d_x, 2) + np.power(d_y, 2))
+
+        dist_down[1:] = np.cumsum(d_dist)
+        dist_up = dist_down[-1] - dist_down
+
+        self.dist_up = dist_up
+        return self.dist_up
+
+    def get_value(self, data_source: Union[GeoGrid, 'StreamNetwork'], attr_name=None):
+        if not isinstance(data_source, (GeoGrid, StreamNetwork)):
+            raise TypeError("Unsupported data_source type")
+
+        if isinstance(data_source, GeoGrid):
+            i_list = self.ordered_nodes[:, 0]
+            j_list = self.ordered_nodes[:, 1]
+            val = data_source.data[i_list, j_list]
+
+        if isinstance(data_source, StreamNetwork):
+            if attr_name is None:
+                raise ValueError("attr_name cannot be None when getting data from StreamNetwork")
+            else:
+                index_of = data_source.index_of
+                val = np.zeros(len(self.ordered_nodes))
+                for k in range(len(self.ordered_nodes)):
+                    i, j = self.ordered_nodes[k]
+                    val[k] = data_source.attrs[attr_name][index_of(i, j)]
+
+        if attr_name is not None:
+            self.attrs[attr_name] = val
+
+        return val
+
+    def dir_vector_at_rowcol(self, row, col, smooth_range=1e3):
+        idx = self.index_of(row, col)
+        dist_up = self.dist_up
+        in_range = np.abs(dist_up - dist_up[idx]) <= smooth_range*0.5
+
+        k = idx
+        while k > 0 and in_range[k]:
+            k -= 1
+        row_up, col_up = self.ordered_nodes[k]
+
+        k = idx
+        while k < len(self.ordered_nodes) - 1 and in_range[k]:
+            k += 1
+        row_down, col_down = self.ordered_nodes[k]
+
+        x_up, y_up = self.rowcol_to_xy(row_up, col_up)
+        x_down, y_down = self.rowcol_to_xy(row_down, col_down)
+
+        dir_vector = np.array([x_down - x_up, y_down - y_up])
+
+        return dir_vector
+
+
+class StreamNetwork(_StreamBase):
     """
     A StreamNetwork object saves the stream network using link information
 
@@ -78,38 +209,6 @@ class StreamNetwork:
         self.downstream = downstream
         self.upstream = upstream
 
-    def _build_hashmap(self):
-        assert isinstance(self.ordered_nodes, np.ndarray), 'Missing ordered_nodes or wrong type'
-
-        ordered_nodes = self.ordered_nodes
-        nodes_hash = {}
-        for k in range(len(ordered_nodes)):
-            row, col = ordered_nodes[k]
-            nodes_hash['{}_{}'.format(int(row), int(col))] = k
-
-        self._nodes_hash = nodes_hash
-
-    def index_of(self, row, col):
-        return self._nodes_hash['{}_{}'.format(int(row), int(col))]
-
-    def nearest_to_xy(self, x, y):
-        """
-        Return the stream node nearest to given x, y geographic coordinates.
-        """
-        row, col = self.xy_to_rowcol(x, y)
-        d_i = np.abs(self.ordered_nodes[:, 0] - row)
-        d_j = np.abs(self.ordered_nodes[:, 1] - col)
-        dist = np.sqrt(np.power(d_i, 2) + np.power(d_j, 2))
-        node = self.ordered_nodes[np.argmin(dist)]
-
-        return node
-
-    def rowcol_to_xy(self, row, col):
-        return rowcol_to_xy(row, col, self.transform)
-
-    def xy_to_rowcol(self, x, y):
-        return xy_to_rowcol(x, y, self.transform)
-
     def to_streams(self, mode='all'):
         if is_verbose():
             print("Converting stream network to streams ...")
@@ -139,7 +238,7 @@ class StreamNetwork:
         # build streams from stream_idx
         streams = np.empty(len(streams_idx), dtype=object)
         for k in range(len(streams_idx)):
-            streams[k] = Stream(coords=ordered_nodes[streams_idx[k]],
+            streams[k] = Stream(ordered_nodes=ordered_nodes[streams_idx[k]],
                                 crs=self.crs, transform=self.transform)
 
         # sort by length
@@ -158,7 +257,7 @@ class StreamNetwork:
                     # this is a tributary, add junction node
                     junction = not_in_streams.nonzero()[0][-1] + 1
                     not_in_streams[junction] = True
-                streams[k].coords = streams[k].coords[not_in_streams]
+                streams[k].ordered_nodes = streams[k].ordered_nodes[not_in_streams]
                 streams[k].dist_up = streams[k].dist_up[not_in_streams]
 
                 # new coords, put them into network
@@ -277,79 +376,6 @@ class StreamNetwork:
             sub_network.attrs[key] = copy.deepcopy(self.attrs[key][np.where(sub_mask)])
 
         return sub_network
-
-
-class Stream:
-    """A stream"""
-
-    def __init__(self, coords, **kwargs):
-        self.coords = np.array(coords, dtype=INT)  # n by 2 np.ndarray
-        self.dist_up = None  # upstream distance
-        self.crs = kwargs.get('crs', None)
-        self.transform = kwargs.get('transform', None)
-        if self.transform is not None:
-            self.get_upstream_distance()
-        self.attrs = {}
-
-    def __repr__(self):
-        return f'Stream({self.coords})'
-
-    def rowcol_to_xy(self, row, col):
-        return rowcol_to_xy(row, col, self.transform)
-
-    def xy_to_rowcol(self, x, y):
-        return xy_to_rowcol(x, y, self.transform)
-
-    def get_upstream_distance(self):
-        if self.transform is None:
-            raise RuntimeError("No transform info for this stream,\
-                cannot calculate the distance")
-
-        if len(self.coords) == 1:
-            self.dist_up = np.array([0.])
-            return self.dist_up
-
-        dist_up = np.zeros(len(self.coords))
-        dist_down = np.zeros(len(self.coords))
-
-        i_list = self.coords[:, 0]
-        j_list = self.coords[:, 1]
-
-        x_list, y_list = self.rowcol_to_xy(i_list, j_list)
-
-        d_x = np.abs(x_list[:-1] - x_list[1:])
-        d_y = np.abs(y_list[:-1] - y_list[1:])
-        d_dist = np.sqrt(np.power(d_x, 2) + np.power(d_y, 2))
-
-        dist_down[1:] = np.cumsum(d_dist)
-        dist_up = dist_down[-1] - dist_down
-
-        self.dist_up = dist_up
-        return self.dist_up
-
-    def get_value(self, data_source: Union[GeoGrid, StreamNetwork], attr_name=None):
-        if not isinstance(data_source, (GeoGrid, StreamNetwork)):
-            raise TypeError("Unsupported data_source type")
-
-        if isinstance(data_source, GeoGrid):
-            i_list = self.coords[:, 0]
-            j_list = self.coords[:, 1]
-            val = data_source.data[i_list, j_list]
-
-        if isinstance(data_source, StreamNetwork):
-            if attr_name is None:
-                raise ValueError("attr_name cannot be None when getting data from StreamNetwork")
-            else:
-                index_of = data_source.index_of
-                val = np.zeros(len(self.coords))
-                for k in range(len(self.coords)):
-                    i, j = self.coords[k]
-                    val[k] = data_source.attrs[attr_name][index_of(i, j)]
-
-        if attr_name is not None:
-            self.attrs[attr_name] = val
-
-        return val
 
 
 def _merge_network(network1: StreamNetwork, network2: StreamNetwork):
