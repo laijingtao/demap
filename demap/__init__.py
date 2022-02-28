@@ -12,4 +12,4 @@ from .core import (process_dem,
                    calculate_chi_grid)
 from .helpers import rowcol_to_xy, xy_to_rowcol
 from .plot import show_grid, show_stream
-from .io import load
+from .io import load, network_to_shp

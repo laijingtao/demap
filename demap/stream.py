@@ -172,10 +172,6 @@ class StreamNetwork:
 
         return streams
 
-    def to_shp(self):
-        # TODO
-        raise NotImplementedError
-
     def extract_from_xy(self, x, y, direction='up'):
         if is_verbose():
             print("Extracting stream network ...")
