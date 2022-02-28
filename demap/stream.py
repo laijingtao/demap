@@ -150,19 +150,23 @@ class StreamNetwork:
 
         # split the stream network into tributaries
         if mode == 'tributary':
-            in_streams = np.zeros(self.n_nodes, dtype=np.int8)
+            in_streams = np.zeros(self.n_nodes, dtype=bool)
 
             for k in range(len(streams_idx)):
-                not_in_streams = np.logical_not(in_streams[streams_idx[k]])
-                streams[k].coords = streams[k].coords[np.where(not_in_streams)]
-                streams[k].dist_up = streams[k].dist_up[np.where(not_in_streams)]
+                not_in_streams = ~in_streams[streams_idx[k]]
+                if streams_idx[k][not_in_streams][-1] != streams_idx[k][-1]:
+                    # this is a tributary, add junction node
+                    junction = not_in_streams.nonzero()[0][-1] + 1
+                    not_in_streams[junction] = True
+                streams[k].coords = streams[k].coords[not_in_streams]
+                streams[k].dist_up = streams[k].dist_up[not_in_streams]
 
                 # new coords, put them into network
-                added_nodes_idx = streams_idx[k][np.where(not_in_streams)]
+                added_nodes_idx = streams_idx[k][not_in_streams]
                 in_streams[added_nodes_idx] = True
 
-            # sort by length again
-            length_list = np.array([st.dist_up[0] for st in streams])
+            # sort by length again, note it's the length of tributary stream
+            length_list = np.array([st.dist_up[0]-st.dist_up[-1] for st in streams])
             sort_idx = np.argsort(length_list)[::-1]
             streams = streams[sort_idx]
 
