@@ -4,6 +4,7 @@ from typing import Union
 
 from .geogrid import GeoGrid
 from .stream import StreamNetwork, Stream
+from .swath import Swath
 
 
 def show_grid(ax: Axes, grid: GeoGrid, **kwargs):
@@ -43,6 +44,15 @@ def show_stream(ax: Axes,
 
         x, y = s.rowcol_to_xy(i, j)
 
-        ax.plot(x, y, 'b-', **kwargs)
+        ax.plot(x, y, **kwargs)
+
+    return ax
+
+
+def show_swath_loc(ax: Axes, swath: Swath, **kwargs):
+    border_coords = swath.border_coords
+    end_coords = swath.end_coords
+    ax.plot(border_coords[:, 0], border_coords[:, 1], **kwargs)
+    ax.plot(end_coords[:, 0], end_coords[:, 1], **kwargs)
 
     return ax

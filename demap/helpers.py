@@ -37,30 +37,3 @@ def transform_to_ndarray(transform: Affine) -> np.ndarray:
 
 def distance_p2p(x1, y1, x2, y2):
     return np.sqrt(np.power(x1 - x2, 2) + np.power(y1 - y2, 2))
-
-
-def interp_along_line(grid: np.ndarray, row1, col1, row2, col2):
-    """
-    Return a profile along line, using scipy.idimage.map-coordinates,
-    which uses bicubic interpolation.
-    """
-    from scipy import ndimage
-
-    length = int(np.hypot(row1-row2, col1-col2))
-    i_list, j_list = np.linspace(row1, row2, length), np.linspace(col1, col2, length)
-
-    zi = ndimage.map_coordinates(grid, np.vstack((i_list, j_list)))
-
-    return zi, i_list, j_list
-
-
-def nearest_along_line(grid: np.ndarray, row1, col1, row2, col2):
-    """
-    Return a profile along line, using nearest neighbor sampling.
-    """
-    length = int(np.hypot(row1-row2, col1-col2))
-    i_list, j_list = np.linspace(row1, row2, length), np.linspace(col1, col2, length)
-
-    zi = grid[i_list.astype(int), j_list.astype(int)]
-
-    return zi, i_list, j_list

@@ -28,6 +28,7 @@ def valley_xsec_at_xy(grid: GeoGrid, stream: Stream, x, y, length, **kwargs):
     """
 
     smooth_range = kwargs.get('smooth_range', 1e3)
+    swath_width = kwargs.get('swath_width', None)
 
     row, col = stream.nearest_to_xy(x, y)
     dir_vector = stream.dir_vector_at_rowcol(row, col, smooth_range=smooth_range)
@@ -39,20 +40,25 @@ def valley_xsec_at_xy(grid: GeoGrid, stream: Stream, x, y, length, **kwargs):
     x1, y1 = np.array([x, y]) + length * 0.5 * perp_vector
     x2, y2 = np.array([x, y]) - length * 0.5 * perp_vector
 
-    end_coords = np.array([[x1, y1], [x2, y2]])
+    if swath_width is None:
+        z, dist = grid.line_profile(x1, y1, x2, y2)
+        end_coords = np.array([[x1, y1], [x2, y2]])
+        swath = Swath(z, dist, end_coords)
+    else:
+        swath = grid.swath_profile(x1, y1, x2, y2, swath_width=swath_width)
 
-    z, dist = grid.profile_along_line(x1, y1, x2, y2)
-
-    return Swath(z, dist, end_coords)
+    return 
 
 
 def xsec_along_valley(grid: GeoGrid, stream: Stream, length, spacing, **kwargs):
 
     dist_up = stream.dist_up
 
+    anchor_points_list = []
     row, col = stream.ordered_nodes[0]
     x, y = stream.rowcol_to_xy(row, col)
     swath = valley_xsec_at_xy(grid, stream, x, y, length, **kwargs)
+    anchor_points_list.append([x, y])
 
     swath_list = [swath]
 
@@ -64,8 +70,9 @@ def xsec_along_valley(grid: GeoGrid, stream: Stream, length, spacing, **kwargs):
             x, y = stream.rowcol_to_xy(row, col)
             swath = valley_xsec_at_xy(grid, stream, x, y, length, **kwargs)
             swath_list.append(swath)
+            anchor_points_list.append([x, y])
             prev_k = k
 
         k += 1
 
-    return swath_list
+    return swath_list, anchor_points_list
