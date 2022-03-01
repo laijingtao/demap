@@ -2,6 +2,7 @@ from ._base import set_verbose
 from .geogrid import GeoGrid
 from .stream import Stream, StreamNetwork
 from .core import (process_dem,
+                   prepare_dem,
                    fill_depression,
                    flow_direction,
                    build_ordered_array,

@@ -1,25 +1,23 @@
 import copy
-from ctypes.wintypes import INT
 import numpy as np
 import richdem
 
 from ._base import is_verbose
 from .geogrid import GeoGrid
 from .stream import Stream, StreamNetwork
-from .helpers import xy_to_rowcol, distance_p2p, transform_to_ndarray
+from .helpers import xy_to_rowcol
 from ._impl import (_build_receiver_impl,
                     _build_ordered_array_impl,
                     _flow_accumulation_impl,
-                    _build_catchment_mask_impl,
-                    _calculate_chi_from_receiver_impl)
+                    _build_catchment_mask_impl)
 
 
-def process_dem(dem):
+def process_dem(dem, **kwargs):
     if isinstance(dem, str):
         from .io import load
         dem = load(dem)
-    dem_filled = fill_depression(dem)
-    receiver = flow_direction(dem_filled)
+    dem_cond = prepare_dem(dem, **kwargs)
+    receiver = flow_direction(dem_cond)
     ordered_nodes = build_ordered_array(receiver)
     drainage_area = flow_accumulation(receiver, ordered_nodes)
     stream_network = build_stream_network(receiver, drainage_area)
@@ -27,7 +25,7 @@ def process_dem(dem):
 
     result = {
         'dem': dem,
-        'dem_filled': dem_filled,
+        'dem_cond': dem_cond,
         'receiver': receiver,
         'ordered_nodes': ordered_nodes,
         'drainage_area': drainage_area,
@@ -35,6 +33,18 @@ def process_dem(dem):
     }
 
     return result
+
+
+def prepare_dem(dem: GeoGrid, **kwargs):
+    dem = copy.deepcopy(dem)
+
+    base_level = kwargs.get('base_level', None)
+    if base_level is not None:
+        dem.data[dem.data < base_level] = dem.nodata
+
+    dem_filled = fill_depression(dem)
+
+    return dem_filled
 
 
 def fill_depression(dem: GeoGrid):
@@ -193,9 +203,12 @@ def flow_accumulation(receiver: GeoGrid, ordered_nodes: np.ndarray):
 def build_stream_network(receiver: GeoGrid, drainage_area: GeoGrid,
                          drainage_area_threshold=1e6):
 
+    if is_verbose():
+        print("Building stream network ...")
+
     receiver_in_stream = copy.deepcopy(receiver)
     # all nodes with drainage_area smaller than the threshold are set as nodata
-    receiver_in_stream.data[np.where(drainage_area.data < drainage_area_threshold)] = np.array(receiver.nodata)
+    receiver_in_stream.data[drainage_area.data < drainage_area_threshold] = np.array(receiver.nodata)
 
     stream_network = StreamNetwork(receiver_in_stream)
 

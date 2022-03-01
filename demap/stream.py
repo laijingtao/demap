@@ -177,9 +177,6 @@ class StreamNetwork(_StreamBase):
         self.attrs = {}
 
     def build_from_receiver_array(self, receiver: GeoGrid):
-        if is_verbose():
-            print("Building stream network ...")
-
         self.transform = copy.deepcopy(receiver.transform)
         self.crs = copy.deepcopy(receiver.crs)
 
@@ -313,9 +310,10 @@ class StreamNetwork(_StreamBase):
         new_idx = -np.ones(len(ordered_nodes))
         new_idx[np.where(sub_mask)] = np.arange(len(new_ordered_nodes))
         # new_idx is essentially a function that convert old index to new index
-        new_downstream[np.where(new_downstream >= 0)] = new_idx[new_downstream[np.where(new_downstream >= 0)]]
-        new_upstream[:, 1:][np.where(new_upstream[:, 1:] >= 0)] = new_idx[new_upstream[:, 1:]
-                                                                          [np.where(new_upstream[:, 1:] >= 0)]]
+        new_downstream[np.where(new_downstream >= 0)] =\
+            new_idx[new_downstream[np.where(new_downstream >= 0)]]
+        new_upstream[:, 1:][np.where(new_upstream[:, 1:] >= 0)] =\
+            new_idx[new_upstream[:, 1:][np.where(new_upstream[:, 1:] >= 0)]]
 
         sub_network = StreamNetwork(ordered_nodes=new_ordered_nodes,
                                     downstream=new_downstream,

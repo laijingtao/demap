@@ -27,7 +27,8 @@ class GeoGrid:
             self.nodata = self.metadata.get('nodata', None)
 
         if self.nodata is None:
-            print('Warning: nodata value is None.')
+            print('Warning: nodata value is None. If this is a DEM file,\
+                it may cause problems.')
 
     def __str__(self):
         return f'GeoGrid:\n{self.data}\nCRS: {self.crs}\nTransform: {self.transform}'
