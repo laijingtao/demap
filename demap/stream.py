@@ -94,14 +94,20 @@ class Stream(_StreamBase):
         self.dist_up = dist_up
         return self.dist_up
 
-    def get_value(self, data_source: Union[GeoGrid, 'StreamNetwork'], attr_name=None):
-        if not isinstance(data_source, (GeoGrid, StreamNetwork)):
+    def get_value(self, data_source: Union[GeoGrid, 'StreamNetwork', np.ndarray],
+                  attr_name=None):
+        if not isinstance(data_source, (GeoGrid, StreamNetwork, np.ndarray)):
             raise TypeError("Unsupported data_source type")
 
         if isinstance(data_source, GeoGrid):
             i_list = self.ordered_nodes[:, 0]
             j_list = self.ordered_nodes[:, 1]
             val = data_source.data[i_list, j_list]
+
+        if isinstance(data_source, np.ndarray):
+            i_list = self.ordered_nodes[:, 0]
+            j_list = self.ordered_nodes[:, 1]
+            val = data_source[i_list, j_list]
 
         if isinstance(data_source, StreamNetwork):
             if attr_name is None:

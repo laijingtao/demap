@@ -1,5 +1,6 @@
 import copy
 import numpy as np
+import numpy.typing as npt
 
 from .geogrid import GeoGrid
 from .stream import Stream, StreamNetwork
@@ -16,27 +17,10 @@ def calculate_chi(drainage_area: GeoGrid, stream_network: StreamNetwork,
     if is_verbose():
         print("Calculating chi ...")
 
-    """
-    drainage_area_data = drainage_area.data
-    ordered_nodes = stream_network.ordered_nodes
-    downstream = stream_network.downstream
-    sn_rowcol_to_xy = stream_network.rowcol_to_xy
-
-    chi = np.zeros(len(ordered_nodes))
-
-    for k in range(len(ordered_nodes)-1, -1, -1):
-        if downstream[k] != -1:
-            i, j = ordered_nodes[k]
-            r_i, r_j = ordered_nodes[downstream[k]]
-            x1, y1 = sn_rowcol_to_xy(i, j)
-            x2, y2 = sn_rowcol_to_xy(r_i, r_j)
-            chi[k] = chi[downstream[k]] + (ref_drainage_area/drainage_area_data[i, j])**ref_concavity\
-                * distance_p2p(x1, y1, x2, y2)
-    """
     ordered_nodes = stream_network.ordered_nodes
     downstream = stream_network.downstream
 
-    # build a pseudo receiver, # its shape may not be the same as original receiver
+    # build a pseudo receiver, its shape may not be the same as original receiver
     pseudo_ni = np.max(ordered_nodes[:, 0]) + 1
     pseudo_nj = np.max(ordered_nodes[:, 1]) + 1
     pseudo_receiver = -np.ones((pseudo_ni, pseudo_nj, 2), dtype=INT)
@@ -51,16 +35,29 @@ def calculate_chi(drainage_area: GeoGrid, stream_network: StreamNetwork,
 
     affine_matrix = transform_to_ndarray(stream_network.transform)
 
-    chi_grid = _calculate_chi_from_receiver_impl(drainage_area.data,
-                                                 pseudo_receiver, ordered_nodes,
-                                                 ref_concavity, ref_drainage_area,
-                                                 affine_matrix)
+    if ref_concavity == 'auto':
+        try:
+            dem: GeoGrid = kwargs['dem']
+        except:
+            raise KeyError("A DEM is needed for auto concavity method.")
+        concavity_range = kwargs.get('concavity_range', [0.3, 0.7])
+        chi_grid, theta_list, misfit_list = _calculate_chi_auto_concavity(
+            stream_network.to_streams(mode='tributary'), dem.data,
+            drainage_area.data, pseudo_receiver, ordered_nodes,
+            ref_drainage_area, concavity_range=concavity_range)
+    else:
+        chi_grid = _calculate_chi_from_receiver_impl(
+            drainage_area.data, pseudo_receiver, ordered_nodes,
+            ref_concavity, ref_drainage_area, affine_matrix)
 
     i_list = ordered_nodes[:, 0]
     j_list = ordered_nodes[:, 1]
     chi = chi_grid[i_list, j_list]
 
     stream_network.attrs['chi'] = chi
+
+    if ref_concavity == 'auto':
+        return theta_list, misfit_list
 
 
 def calculate_chi_grid(drainage_area: GeoGrid, receiver: GeoGrid,
@@ -82,3 +79,57 @@ def calculate_chi_grid(drainage_area: GeoGrid, receiver: GeoGrid,
                   copy.deepcopy(receiver.metadata), nodata=-1)
 
     return chi
+
+
+def _calculate_chi_auto_concavity(stream_list: np.ndarray,
+                                  dem_data: np.ndarray,
+                                  drainage_area_data: np.ndarray,
+                                  receiver_data: np.ndarray,
+                                  ordered_nodes: np.ndarray,
+                                  ref_drainage_area,
+                                  concavity_range):
+    """Implementation of quasi -  Mudd et al., 2018
+    (https://esurf.copernicus.org/articles/6/505/2018/)
+    """
+
+    if is_verbose():
+        print("Finding the best-fit concavity ...")
+
+    affine_matrix = transform_to_ndarray(stream_list[0].transform)
+
+    theta_list = np.arange(concavity_range[0], concavity_range[1]+1e-5, 0.01)
+    misfit_list = np.zeros(len(theta_list))
+    for k in range(len(theta_list)):
+        chi_grid = _calculate_chi_from_receiver_impl(
+            drainage_area_data, receiver_data, ordered_nodes,
+            theta_list[k], ref_drainage_area, affine_matrix)
+
+        misfit = _estimate_misfit(stream_list, chi_grid, dem_data)
+        misfit_list[k] = misfit
+
+    k = np.argmin(misfit_list)
+    chi_grid = _calculate_chi_from_receiver_impl(
+        drainage_area_data, receiver_data, ordered_nodes,
+        theta_list[k], ref_drainage_area, affine_matrix)
+
+    return chi_grid, theta_list, misfit_list
+
+
+def _estimate_misfit(stream_list: np.ndarray, chi_grid: np.ndarray, dem_data: np.ndarray):
+
+    trunk: Stream = stream_list[0]
+    z = trunk.get_value(dem_data)
+    chi = trunk.get_value(chi_grid)
+
+    from scipy import interpolate
+    z_trunk = interpolate.interp1d(chi, z, fill_value="extrapolate")
+
+    misfit = 0
+    for s in stream_list[1:]:
+        z = s.get_value(dem_data)
+        chi = s.get_value(chi_grid)
+
+        residual = np.abs(z - z_trunk(chi))
+        misfit += np.sum(residual)
+
+    return misfit
