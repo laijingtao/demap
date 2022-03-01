@@ -15,6 +15,7 @@ class _StreamBase:
         self.ordered_nodes = None
         self.crs = None
         self.transform = None
+        self.attrs = {}
 
     def rowcol_to_xy(self, row, col):
         return rowcol_to_xy(row, col, self.transform)
@@ -55,11 +56,12 @@ class Stream(_StreamBase):
     def __init__(self, ordered_nodes, **kwargs):
         self.ordered_nodes = np.array(ordered_nodes, dtype=INT)  # n by 2 np.ndarray
         self._build_hashmap()
-        self.dist_up = None  # upstream distance
         self.crs = kwargs.get('crs', None)
         self.transform = kwargs.get('transform', None)
         if self.transform is not None:
-            self.get_upstream_distance()
+            _ = self.get_upstream_distance()
+        else:
+            self.dist_up = None
         self.attrs = {}
 
     def __repr__(self):
