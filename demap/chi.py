@@ -95,6 +95,9 @@ def _calculate_chi_auto_concavity(stream_list: np.ndarray,
     if is_verbose():
         print("Finding the best-fit concavity ...")
 
+    misfit_estimator = _least_square_estimate
+    best_fit = np.argmin
+
     affine_matrix = transform_to_ndarray(stream_list[0].transform)
 
     theta_list = np.arange(concavity_range[0], concavity_range[1]+1e-5, 0.01)
@@ -104,10 +107,10 @@ def _calculate_chi_auto_concavity(stream_list: np.ndarray,
             drainage_area_data, receiver_data, ordered_nodes,
             theta_list[k], ref_drainage_area, affine_matrix)
 
-        misfit = _estimate_misfit(stream_list, chi_grid, dem_data)
+        misfit = misfit_estimator(stream_list, chi_grid, dem_data)
         misfit_list[k] = misfit
 
-    k = np.argmin(misfit_list)
+    k = best_fit(misfit_list)
     chi_grid = _calculate_chi_from_receiver_impl(
         drainage_area_data, receiver_data, ordered_nodes,
         theta_list[k], ref_drainage_area, affine_matrix)
@@ -115,10 +118,15 @@ def _calculate_chi_auto_concavity(stream_list: np.ndarray,
     return chi_grid, theta_list, misfit_list
 
 
-def _estimate_misfit(stream_list: np.ndarray, chi_grid: np.ndarray, dem_data: np.ndarray):
+def _least_square_estimate(stream_list: np.ndarray, chi_grid: np.ndarray, dem_data: np.ndarray):
 
     trunk: Stream = stream_list[0]
     z = trunk.get_value(dem_data)
+
+    # normalize the dem by trunk elevation range
+    norm_dem_data = (dem_data - z.min()) / (z.max() - z.min())
+
+    z = trunk.get_value(norm_dem_data)
     chi = trunk.get_value(chi_grid)
 
     from scipy import interpolate
@@ -126,10 +134,10 @@ def _estimate_misfit(stream_list: np.ndarray, chi_grid: np.ndarray, dem_data: np
 
     misfit = 0
     for s in stream_list[1:]:
-        z = s.get_value(dem_data)
+        z = s.get_value(norm_dem_data)
         chi = s.get_value(chi_grid)
 
-        residual = np.abs(z - z_trunk(chi))
+        residual = np.power(z - z_trunk(chi), 2)
         misfit += np.sum(residual)
 
     return misfit
