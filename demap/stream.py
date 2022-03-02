@@ -49,6 +49,36 @@ class _StreamBase:
 
         return node
 
+    def get_value(self, data_source: Union[GeoGrid, 'StreamNetwork', np.ndarray],
+                  attr_name=None):
+        if not isinstance(data_source, (GeoGrid, StreamNetwork, np.ndarray)):
+            raise TypeError("Unsupported data_source type")
+
+        if isinstance(data_source, GeoGrid):
+            i_list = self.ordered_nodes[:, 0]
+            j_list = self.ordered_nodes[:, 1]
+            val = data_source.data[i_list, j_list]
+
+        if isinstance(data_source, np.ndarray):
+            i_list = self.ordered_nodes[:, 0]
+            j_list = self.ordered_nodes[:, 1]
+            val = data_source[i_list, j_list]
+
+        if isinstance(data_source, StreamNetwork):
+            if attr_name is None:
+                raise ValueError("attr_name cannot be None when getting data from StreamNetwork")
+            else:
+                index_of = data_source.index_of
+                val = np.zeros(len(self.ordered_nodes))
+                for k in range(len(self.ordered_nodes)):
+                    i, j = self.ordered_nodes[k]
+                    val[k] = data_source.attrs[attr_name][index_of(i, j)]
+
+        if attr_name is not None:
+            self.attrs[attr_name] = val
+
+        return val
+
 
 class Stream(_StreamBase):
     """A stream"""
@@ -94,36 +124,6 @@ class Stream(_StreamBase):
         self.dist_up = dist_up
         return self.dist_up
 
-    def get_value(self, data_source: Union[GeoGrid, 'StreamNetwork', np.ndarray],
-                  attr_name=None):
-        if not isinstance(data_source, (GeoGrid, StreamNetwork, np.ndarray)):
-            raise TypeError("Unsupported data_source type")
-
-        if isinstance(data_source, GeoGrid):
-            i_list = self.ordered_nodes[:, 0]
-            j_list = self.ordered_nodes[:, 1]
-            val = data_source.data[i_list, j_list]
-
-        if isinstance(data_source, np.ndarray):
-            i_list = self.ordered_nodes[:, 0]
-            j_list = self.ordered_nodes[:, 1]
-            val = data_source[i_list, j_list]
-
-        if isinstance(data_source, StreamNetwork):
-            if attr_name is None:
-                raise ValueError("attr_name cannot be None when getting data from StreamNetwork")
-            else:
-                index_of = data_source.index_of
-                val = np.zeros(len(self.ordered_nodes))
-                for k in range(len(self.ordered_nodes)):
-                    i, j = self.ordered_nodes[k]
-                    val[k] = data_source.attrs[attr_name][index_of(i, j)]
-
-        if attr_name is not None:
-            self.attrs[attr_name] = val
-
-        return val
-
     def dir_vector_at_rowcol(self, row, col, smooth_range=1e3):
         idx = self.index_of(row, col)
         dist_up = self.dist_up
@@ -145,6 +145,28 @@ class Stream(_StreamBase):
         dir_vector = np.array([x_down - x_up, y_down - y_up])
 
         return dir_vector
+
+    def smooth_profile(self, dem: Union[GeoGrid, np.ndarray], **kwargs):
+        """Return a smoothed channel profile by removing obstacle
+
+        Parameters
+        ----------
+        dem : Union[GeoGrid, np.ndarray]
+            DEM
+
+        Returns
+        -------
+        z: array-like
+            smoothed channel profile
+        """
+        z = self.get_value(dem)
+        z = z.astype(float)
+
+        for k in range(1, len(z)):
+            if z[k] > z[k-1]:
+                z[k] = np.nextafter(z[k-1], z[k-1]-1)
+
+        return z
 
 
 class StreamNetwork(_StreamBase):
