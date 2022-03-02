@@ -165,6 +165,7 @@ def _build_catchment_mask_impl(outlet_i, outlet_j, receiver: np.ndarray, ordered
     return mask
 
 
+'''
 @_speed_up
 def _calculate_chi_from_receiver_impl(drainage_area_data: np.ndarray,
                                       receiver_data: np.ndarray,
@@ -187,6 +188,73 @@ def _calculate_chi_from_receiver_impl(drainage_area_data: np.ndarray,
             #chi[i, j] = chi[r_i, r_j] +\
             #    (ref_drainage_area/drainage_area_data[i, j])**ref_concavity * dist
             chi[i, j] = chi[r_i, r_j] + (dchi[i, j] + dchi[r_i, r_j])/2 * dist
+        else:
+            chi[i, j] = 0
+
+    return chi
+'''
+
+
+@_speed_up
+def _build_pseudo_receiver_from_network_impl(ordered_nodes: np.ndarray,
+                                             downstream: np.ndarray):
+    """Return a pseudo receiver for a stream network,
+    its shape may not be the same as original receive
+    """
+    pseudo_ni = np.max(ordered_nodes[:, 0]) + 1
+    pseudo_nj = np.max(ordered_nodes[:, 1]) + 1
+    pseudo_receiver = -np.ones((pseudo_ni, pseudo_nj, 2), dtype=INT)
+
+    for k in range(len(ordered_nodes)):
+        i, j = ordered_nodes[k]
+        if downstream[k] != -1:
+            r_i, r_j = ordered_nodes[downstream[k]]
+        else:
+            r_i, r_j = i, j
+        pseudo_receiver[i, j] = [r_i, r_j]
+
+    return pseudo_receiver
+
+
+@_speed_up
+def _calculate_dist_up_impl(receiver_data: np.ndarray, ordered_nodes: np.ndarray,
+                            dx, dy):
+
+    nrows, ncols, _ = receiver_data.shape
+
+    dist_up = -np.ones((nrows, ncols))
+
+    for k in range(len(ordered_nodes)-1, -1, -1):
+        i, j = ordered_nodes[k]
+        r_i, r_j = receiver_data[i, j]
+        if r_i != i or r_j != j:
+            d_dist = np.sqrt(np.power((i - r_i)*dy, 2) + np.power((j - r_j)*dx, 2))
+            dist_up[i, j] = dist_up[r_i, r_j] + d_dist
+        else:
+            dist_up[i, j] = 0
+
+    return dist_up
+
+
+@_speed_up
+def _calculate_chi_from_receiver_impl(dist_up: np.ndarray,
+                                      drainage_area_data: np.ndarray,
+                                      receiver_data: np.ndarray,
+                                      ordered_nodes: np.ndarray,
+                                      ref_concavity, ref_drainage_area):
+
+    nrows, ncols, _ = receiver_data.shape
+
+    chi = -np.ones((nrows, ncols))
+
+    dchi = np.power(ref_drainage_area/drainage_area_data, ref_concavity)
+
+    for k in range(len(ordered_nodes)-1, -1, -1):
+        i, j = ordered_nodes[k]
+        r_i, r_j = receiver_data[i, j]
+        if r_i != i or r_j != j:
+            d_dist = dist_up[i, j] - dist_up[r_i, r_j]
+            chi[i, j] = chi[r_i, r_j] + (dchi[i, j] + dchi[r_i, r_j])/2 * d_dist
         else:
             chi[i, j] = 0
 

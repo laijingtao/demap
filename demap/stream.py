@@ -5,7 +5,9 @@ from typing import Union
 from .helpers import rowcol_to_xy, xy_to_rowcol
 from ._base import is_verbose, INT
 from .geogrid import GeoGrid
-from ._impl import _build_ordered_array_impl
+from ._impl import (_build_ordered_array_impl,
+                    _build_pseudo_receiver_from_network_impl,
+                    _calculate_dist_up_impl)
 
 
 class _StreamBase:
@@ -22,6 +24,12 @@ class _StreamBase:
 
     def xy_to_rowcol(self, x, y):
         return xy_to_rowcol(x, y, self.transform)
+
+    def dx(self):
+        return np.abs(self.transform[0])
+
+    def dy(self):
+        return np.abs(self.transform[4])
 
     def _build_hashmap(self):
         assert isinstance(self.ordered_nodes, np.ndarray), 'Missing ordered_nodes or wrong type'
@@ -199,6 +207,10 @@ class StreamNetwork(_StreamBase):
             self.upstream = kwargs['upstream']
             self.crs = kwargs.get('crs', None)
             self.transform = kwargs.get('transform', None)
+            if self.transform is not None:
+                _ = self.get_upstream_distance()
+            else:
+                self.dist_up = None
         else:
             print("Warning: incomplete input, an empty StreamNetwork was created")
 
@@ -235,6 +247,21 @@ class StreamNetwork(_StreamBase):
         self.ordered_nodes = ordered_nodes
         self.downstream = downstream
         self.upstream = upstream
+
+        _ = self.get_upstream_distance()
+
+    def get_upstream_distance(self):
+        pseudo_receiver = _build_pseudo_receiver_from_network_impl(
+            self.ordered_nodes, self.downstream)
+
+        dist_up_grid = _calculate_dist_up_impl(
+            pseudo_receiver, self.ordered_nodes, self.dx(), self.dy())
+
+        dist_up = self.get_value(dist_up_grid)
+
+        self.dist_up = dist_up
+
+        return dist_up
 
     def to_streams(self, mode='all'):
         if is_verbose():
@@ -404,6 +431,32 @@ class StreamNetwork(_StreamBase):
             sub_network.attrs[key] = copy.deepcopy(self.attrs[key][np.where(sub_mask)])
 
         return sub_network
+
+    def smooth_profile(self, dem: Union[GeoGrid, np.ndarray], **kwargs):
+        """Return a smoothed channel profile by removing obstacle
+
+        Parameters
+        ----------
+        dem : Union[GeoGrid, np.ndarray]
+            DEM
+
+        Returns
+        -------
+        z: array-like
+            smoothed channel profile
+        """
+        downstream = self.downstream
+
+        z = self.get_value(dem)
+        z = z.astype(float)
+
+        for k in range(1, len(z)):
+            if downstream[k] != -1:
+                d_k = downstream[k]
+                if z[d_k] > z[k]:
+                    z[d_k] = np.nextafter(z[k], z[k]-1)
+
+        return z
 
 
 def _merge_network(network1: StreamNetwork, network2: StreamNetwork):
