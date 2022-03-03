@@ -11,7 +11,7 @@ from ._base import is_verbose, INT
 from .helpers import transform_to_ndarray
 
 
-def calculate_chi(drainage_area: GeoGrid, stream_network: StreamNetwork,
+def calculate_chi(stream_network: StreamNetwork, drainage_area: GeoGrid, 
                   ref_concavity=0.45, ref_drainage_area=1e6, **kwargs):
     """
     Calculate chi and save it in the given StreamNetwork.
@@ -35,12 +35,11 @@ def calculate_chi(drainage_area: GeoGrid, stream_network: StreamNetwork,
             raise KeyError("A DEM is needed for auto concavity method.")
         concavity_range = kwargs.get('concavity_range', [0.3, 0.7])
         chi_grid, best_fit_theta, theta_list, misfit_list = _calculate_chi_auto_concavity(
-            stream_network, dem.data, dist_up_grid,
-            drainage_area.data, pseudo_receiver, ordered_nodes,
-            ref_drainage_area, concavity_range=concavity_range)
+            stream_network, dem.data, pseudo_receiver, ordered_nodes,
+            dist_up_grid, drainage_area.data, ref_drainage_area, concavity_range=concavity_range)
     else:
         chi_grid = _calculate_chi_from_receiver_impl(
-            dist_up_grid, drainage_area.data, pseudo_receiver, ordered_nodes,
+            pseudo_receiver, ordered_nodes, dist_up_grid, drainage_area.data,
             ref_concavity, ref_drainage_area)
 
     stream_network.get_value(chi_grid, attr_name='chi')
@@ -72,8 +71,7 @@ def calculate_chi_grid(drainage_area: GeoGrid, receiver: GeoGrid,
 '''
 
 
-def calculate_chi_grid(drainage_area: GeoGrid, receiver: GeoGrid,
-                       ordered_nodes: np.ndarray,
+def calculate_chi_grid(receiver: GeoGrid, ordered_nodes: np.ndarray, drainage_area: GeoGrid, 
                        ref_concavity=0.45, ref_drainage_area=1e6, **kwargs):
 
     if is_verbose():
@@ -83,8 +81,8 @@ def calculate_chi_grid(drainage_area: GeoGrid, receiver: GeoGrid,
     dy = np.abs(receiver.transform[4])
     dist_up = _calculate_dist_up_impl(receiver.data, ordered_nodes, dx, dy)
 
-    chi_data = _calculate_chi_from_receiver_impl(dist_up, drainage_area.data,
-                                                 receiver.data, ordered_nodes,
+    chi_data = _calculate_chi_from_receiver_impl(receiver.data, ordered_nodes,
+                                                 dist_up, drainage_area.data,
                                                  ref_concavity, ref_drainage_area)
 
     chi = GeoGrid(chi_data, copy.deepcopy(receiver.crs),
@@ -96,10 +94,10 @@ def calculate_chi_grid(drainage_area: GeoGrid, receiver: GeoGrid,
 
 def _calculate_chi_auto_concavity(stream_network: StreamNetwork,
                                   dem_data: np.ndarray,
-                                  dist_up_grid: np.ndarray,
-                                  drainage_area_data: np.ndarray,
                                   receiver_data: np.ndarray,
                                   ordered_nodes: np.ndarray,
+                                  dist_up_grid: np.ndarray,
+                                  drainage_area_data: np.ndarray,
                                   ref_drainage_area,
                                   concavity_range):
     """Implementation of quasi -  Mudd et al., 2018
@@ -118,7 +116,7 @@ def _calculate_chi_auto_concavity(stream_network: StreamNetwork,
     misfit_list = np.zeros(len(theta_list))
     for k in range(len(theta_list)):
         chi_grid = _calculate_chi_from_receiver_impl(
-            dist_up_grid, drainage_area_data, receiver_data, ordered_nodes,
+            receiver_data, ordered_nodes, dist_up_grid, drainage_area_data,
             theta_list[k], ref_drainage_area)
 
         misfit = misfit_estimator(stream_list, chi_grid, dem_data)
@@ -126,7 +124,7 @@ def _calculate_chi_auto_concavity(stream_network: StreamNetwork,
 
     k = best_fit(misfit_list)
     chi_grid = _calculate_chi_from_receiver_impl(
-        dist_up_grid, drainage_area_data, receiver_data, ordered_nodes,
+        receiver_data, ordered_nodes, dist_up_grid, drainage_area_data,
         theta_list[k], ref_drainage_area)
 
     return chi_grid, theta_list[k], theta_list, misfit_list

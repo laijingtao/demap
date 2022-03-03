@@ -237,10 +237,10 @@ def _calculate_dist_up_impl(receiver_data: np.ndarray, ordered_nodes: np.ndarray
 
 
 @_speed_up
-def _calculate_chi_from_receiver_impl(dist_up: np.ndarray,
-                                      drainage_area_data: np.ndarray,
-                                      receiver_data: np.ndarray,
+def _calculate_chi_from_receiver_impl(receiver_data: np.ndarray,
                                       ordered_nodes: np.ndarray,
+                                      dist_up: np.ndarray,
+                                      drainage_area_data: np.ndarray,
                                       ref_concavity, ref_drainage_area):
 
     nrows, ncols, _ = receiver_data.shape
