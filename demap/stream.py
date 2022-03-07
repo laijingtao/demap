@@ -202,11 +202,11 @@ class StreamNetwork(_StreamBase):
         if receiver is not None:
             self.build_from_receiver_array(receiver)
         elif all(k in kwargs for k in ('ordered_nodes', 'downstream', 'upstream')):
-            self.ordered_nodes = kwargs['ordered_nodes']
+            self.ordered_nodes = np.array(kwargs['ordered_nodes'], dtype=INT)
             self.n_nodes = len(self.ordered_nodes)
             self._build_hashmap()
-            self.downstream = kwargs['downstream']
-            self.upstream = kwargs['upstream']
+            self.downstream = np.array(kwargs['downstream'], dtype=INT)
+            self.upstream = np.array(kwargs['upstream'], dtype=INT)
             self.crs = kwargs.get('crs', None)
             self.transform = kwargs.get('transform', None)
             if self.transform is not None:
@@ -265,13 +265,57 @@ class StreamNetwork(_StreamBase):
 
         return dist_up
 
-    def to_streams(self, mode='all'):
+    def to_streams(self, mode='tributary'):
         if is_verbose():
             print("Converting stream network to streams ...")
 
         if mode not in ['all', 'tributary']:
             raise ValueError("Unknow mode, accepted modes are: \'all\', \'tributary\'")
 
+        if mode == 'tributary':
+            mode_flag = 1
+        else:
+            mode_flag = 2
+
+        ordered_nodes = self.ordered_nodes
+        upstream = self.upstream
+        downstream = self.downstream
+        index_of = self.index_of
+        in_streams = np.zeros(self.n_nodes, dtype=bool)
+
+        head_nodes_idx = np.arange(self.n_nodes)[upstream[:, 0] == 0]
+        sort_idx = np.argsort(self.dist_up[head_nodes_idx])[::-1]
+        head_nodes_idx = head_nodes_idx[sort_idx]
+
+        streams = []
+        for head in head_nodes_idx:
+            stream_idx = [head]
+
+            # build streams_idx
+            k = head
+            while (downstream[k] != -1) and (not in_streams[downstream[k]]):
+                k = downstream[k]
+                stream_idx.append(k)
+                if mode_flag == 1:
+                    in_streams[k] = True
+
+            if mode_flag == 1 and downstream[k] != -1:
+                # also add juction node
+                stream_idx.append(downstream[k])
+
+            new_stream = Stream(ordered_nodes=ordered_nodes[stream_idx],
+                                crs=self.crs, transform=self.transform)
+
+            streams.append(new_stream)
+
+        streams = np.array(streams)
+        if mode_flag == 1:
+            # sort by length again for tributary mode, note it's the length of tributary stream
+            length_list = np.array([st.dist_up[0]-st.dist_up[-1] for st in streams])
+            sort_idx = np.argsort(length_list)[::-1]
+            streams = streams[sort_idx]
+
+        """
         ordered_nodes = self.ordered_nodes
         upstream = self.upstream
         downstream = self.downstream
@@ -324,6 +368,7 @@ class StreamNetwork(_StreamBase):
             length_list = np.array([st.dist_up[0]-st.dist_up[-1] for st in streams])
             sort_idx = np.argsort(length_list)[::-1]
             streams = streams[sort_idx]
+        """
 
         return streams
 
