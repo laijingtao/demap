@@ -1,3 +1,4 @@
+from re import M
 import numpy as np
 import copy
 from typing import Union
@@ -99,6 +100,7 @@ class Stream(_StreamBase):
         if self.transform is not None:
             _ = self.get_upstream_distance()
         else:
+            print("Warning: no transform info for this stream, dist_up is set to None")
             self.dist_up = None
         self.attrs = {}
 
@@ -372,10 +374,9 @@ class StreamNetwork(_StreamBase):
 
         sub_network = StreamNetwork(ordered_nodes=new_ordered_nodes,
                                     downstream=new_downstream,
-                                    upstream=new_upstream)
-
-        sub_network.crs = self.crs
-        sub_network.transform = self.transform
+                                    upstream=new_upstream,
+                                    crs=self.crs,
+                                    transform=self.transform)
 
         # extract attrs
         for key in self.attrs:
@@ -421,10 +422,9 @@ class StreamNetwork(_StreamBase):
 
         sub_network = StreamNetwork(ordered_nodes=new_ordered_nodes,
                                     downstream=new_downstream,
-                                    upstream=new_upstream)
-
-        sub_network.crs = self.crs
-        sub_network.transform = self.transform
+                                    upstream=new_upstream,
+                                    crs=self.crs,
+                                    transform=self.transform)
 
         # extract attrs
         for key in self.attrs:
@@ -459,6 +459,25 @@ class StreamNetwork(_StreamBase):
         return z
 
 
-def _merge_network(network1: StreamNetwork, network2: StreamNetwork):
-    # TODO
-    raise NotImplementedError
+def merge_stream_network(network1: StreamNetwork, network2: StreamNetwork):
+
+    ordered_nodes = np.append(network1.ordered_nodes, network2.ordered_nodes, axis=0)
+
+    downstream = np.append(network1.downstream, network2.downstream)
+    upstream = np.append(network1.upstream, network2.upstream, axis=0)
+
+    n1 = len(network1.ordered_nodes)
+
+    downstream[n1:][downstream[n1:] >= 0] += n1
+    upstream[n1:, 1:][upstream[n1:, 1:] >= 0] += n1
+
+    merged = StreamNetwork(ordered_nodes=ordered_nodes,
+                           downstream=downstream,
+                           upstream=upstream,
+                           crs=copy.deepcopy(network1.crs),
+                           transform=copy.deepcopy(network1.transform))
+
+    for key in merged.attrs:
+        merged.attrs[key] = np.append(network1.attrs[key], network2.attrs[key], axis=0)
+
+    return merged

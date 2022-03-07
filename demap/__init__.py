@@ -1,6 +1,6 @@
 from ._base import set_verbose
 from .geogrid import GeoGrid
-from .stream import Stream, StreamNetwork
+from .stream import Stream, StreamNetwork, merge_stream_network
 from .core import (process_dem,
                    prepare_dem,
                    fill_depression,
