@@ -280,7 +280,6 @@ class StreamNetwork(_StreamBase):
         ordered_nodes = self.ordered_nodes
         upstream = self.upstream
         downstream = self.downstream
-        index_of = self.index_of
         in_streams = np.zeros(self.n_nodes, dtype=bool)
 
         head_nodes_idx = np.arange(self.n_nodes)[upstream[:, 0] == 0]
@@ -305,6 +304,9 @@ class StreamNetwork(_StreamBase):
 
             new_stream = Stream(ordered_nodes=ordered_nodes[stream_idx],
                                 crs=self.crs, transform=self.transform)
+
+            # make sure the dist_up is relative to outlet of the stream network
+            new_stream.dist_up += self.dist_up[stream_idx[-1]]
 
             streams.append(new_stream)
 
