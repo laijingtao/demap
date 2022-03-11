@@ -20,7 +20,9 @@ def process_dem(dem, **kwargs):
     receiver = flow_direction(dem_cond)
     ordered_nodes = build_ordered_array(receiver)
     drainage_area = flow_accumulation(receiver, ordered_nodes)
-    stream_network = build_stream_network(receiver, drainage_area)
+    drainage_area_threshold = kwargs.get('drainage_area_threshold', 1e6)
+    stream_network = build_stream_network(receiver, drainage_area,
+        drainage_area_threshold=drainage_area_threshold)
     #stream_list = stream_network.to_streams()
 
     result = {
