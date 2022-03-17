@@ -2,6 +2,7 @@ import math
 import numpy as np
 from rasterio import Affine
 
+from ._base import INT
 
 def rowcol_to_xy(row, col, transform: Affine):
     """
@@ -21,8 +22,8 @@ def xy_to_rowcol(x, y, transform: Affine):
     the given geographic coordinates (x, y)
     """
     col, row = ~transform * (x, y)
-    col = math.floor(col)
-    row = math.floor(row)
+    col = np.floor(col).astype(dtype=INT)
+    row = np.floor(row).astype(dtype=INT)
     return row, col
 
 
