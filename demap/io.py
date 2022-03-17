@@ -2,7 +2,7 @@ import pickle
 import rasterio as rio
 
 from .geogrid import GeoGrid
-from .stream import StreamNetwork
+from .stream import StreamNetwork, Stream
 
 
 def load(filename):
@@ -22,8 +22,16 @@ def load(filename):
 def network_to_shp(stream_network: StreamNetwork,
                    filename: str):
 
-    import shapefile
     stream_list = stream_network.to_streams(mode='tributary')
+    stream_to_shp(stream_list, filename)
+
+
+def stream_to_shp(stream, filename:str):
+    if isinstance(stream, Stream):
+        stream_list = [stream]
+    else:
+        stream_list = stream
+
     line_list = []
     for stream in stream_list:
         i_list = stream.ordered_nodes[:, 0]
@@ -35,6 +43,7 @@ def network_to_shp(stream_network: StreamNetwork,
 
         line_list.append(xy_coords)
 
+    import shapefile
     with shapefile.Writer(filename) as w:
         w.field('name', 'C')
         for line in line_list:

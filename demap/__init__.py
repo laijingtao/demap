@@ -13,4 +13,4 @@ from .chi import calculate_chi, calculate_chi_grid, calculate_ksn
 from .valley import valley_xsec_at_xy, xsec_along_valley
 from .helpers import rowcol_to_xy, xy_to_rowcol
 from .plot import show_grid, show_stream, show_swath_loc
-from .io import load, network_to_shp, dump_pickle, load_pickle
+from .io import load, network_to_shp, stream_to_shp, dump_pickle, load_pickle
