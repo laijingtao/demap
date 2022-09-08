@@ -156,6 +156,31 @@ class Stream(_StreamBase):
 
         return dir_vector
 
+    def mean_value_at_rowcol(self, row, col, value, smooth_range=1e3):
+        idx = self.index_of(row, col)
+        dist_up = self.dist_up
+        in_range = np.abs(dist_up - dist_up[idx]) <= smooth_range*0.5
+
+        k = idx
+        while k > 0 and in_range[k]:
+            k -= 1
+        idx_up = k
+
+        k = idx
+        while k < len(self.ordered_nodes) - 1 and in_range[k]:
+            k += 1
+        idx_down = k
+
+        return np.mean(value[idx_up:idx_down+1])
+
+    def smooth_value(self, value, smooth_range=1e3):
+        smooth_value = value.copy()
+        for i in range(len(smooth_value)):
+            row, col = self.ordered_nodes[i]
+            smooth_value[i] = self.mean_value_at_rowcol(row, col, value, smooth_range)
+
+        return smooth_value
+
     def smooth_profile(self, dem: Union[GeoGrid, np.ndarray], **kwargs):
         """Return a smoothed channel profile by removing obstacle
 
