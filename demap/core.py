@@ -65,6 +65,7 @@ def fill_depression(dem: GeoGrid):
         print("Filling depressions ...")
 
     dem_rd = dem.to_rdarray()
+    dem_rd.no_data = dem.nodata
     # richdem's filldepression does not work properly with int
     dem_rd = dem_rd.astype(dtype=float)
 
@@ -121,6 +122,7 @@ def _flow_dir_from_richdem(dem: GeoGrid):
     """
 
     dem_rd = dem.to_rdarray()
+    dem_rd.no_data = dem.nodata
 
     nodata_flow_dir = -1
 
