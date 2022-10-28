@@ -39,8 +39,8 @@ def show_stream(ax: Axes,
         stream_list = streams
 
     for s in stream_list:
-        i = s.ordered_nodes[:, 0]
-        j = s.ordered_nodes[:, 1]
+        i = s.dataset['rows'].data
+        j = s.dataset['cols'].data
 
         x, y = s.rowcol_to_xy(i, j)
 

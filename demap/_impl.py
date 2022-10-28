@@ -259,3 +259,36 @@ def _calculate_chi_from_receiver_impl(receiver_data: np.ndarray,
             chi[i, j] = 0
 
     return chi
+
+
+@_speed_up
+def _build_upward_sub_network_mask(outlet, downstream: np.ndarray):
+    n_nodes = len(downstream)
+    in_sub_network = np.zeros(n_nodes, dtype=np.bool_)
+    in_sub_network[outlet] = True
+
+    # find all channel heads
+    is_head = np.ones(n_nodes, dtype=np.bool_)
+    for k in range(n_nodes):
+        if downstream[k] > -1:
+            is_head[downstream[k]] = False
+
+    # check if a chnnel head drains to the target outlet
+    for k in range(n_nodes):
+        if is_head[k]:
+            curr_idx = k
+            while curr_idx < outlet and curr_idx > -1:
+                curr_idx = downstream[curr_idx]
+            if curr_idx == outlet:
+                in_sub_network[k] = True
+
+    # now we have all channel heads that drains to the target outlet,
+    # add all downstream nodes
+    for k in range(n_nodes):
+        if is_head[k] and in_sub_network[k]:
+            curr_idx = k
+            while curr_idx < outlet:
+                in_sub_network[curr_idx] = True
+                curr_idx = downstream[curr_idx]
+
+    return in_sub_network
