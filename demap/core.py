@@ -42,7 +42,7 @@ def prepare_dem(dem: GeoGrid, **kwargs):
 
     base_level = kwargs.get('base_level', None)
     if base_level is not None:
-        dem.data[dem.data < base_level] = dem.nodata
+        dem.dataarray.data[dem.dataarray.data < base_level] = dem.dataarray.attrs['nodata']
 
     dem_filled = fill_depression(dem)
 
@@ -65,7 +65,6 @@ def fill_depression(dem: GeoGrid):
         print("Filling depressions ...")
 
     dem_rd = dem.to_rdarray()
-    dem_rd.no_data = dem.nodata
     # richdem's filldepression does not work properly with int
     dem_rd = dem_rd.astype(dtype=float)
 
@@ -82,8 +81,10 @@ def fill_depression(dem: GeoGrid):
     dem_rd_filled = np.array(dem_rd_filled)
 
     dem_filled = GeoGrid(dem_rd_filled,
-                         copy.deepcopy(dem.crs), copy.deepcopy(dem.transform),
-                         copy.deepcopy(dem.metadata), nodata=dem.nodata)
+                         copy.deepcopy(dem.dataarray.attrs['crs']),
+                         copy.deepcopy(dem.dataarray.attrs['transform']),
+                         copy.deepcopy(dem.dataarray.attrs['metadata']),
+                         nodata=dem.dataarray.attrs['nodata'])
 
     return dem_filled
 
@@ -122,7 +123,6 @@ def _flow_dir_from_richdem(dem: GeoGrid):
     """
 
     dem_rd = dem.to_rdarray()
-    dem_rd.no_data = dem.nodata
 
     nodata_flow_dir = -1
 
@@ -130,7 +130,7 @@ def _flow_dir_from_richdem(dem: GeoGrid):
 
     flow_prop = richdem.FlowProportions(dem=dem_rd, method='D8')
 
-    flow_dir_data = np.zeros(dem.data.shape)
+    flow_dir_data = np.zeros(dem.dataarray.data.shape)
 
     flow_prop = np.array(flow_prop)
     node_info = flow_prop[:, :, 0]
@@ -141,8 +141,10 @@ def _flow_dir_from_richdem(dem: GeoGrid):
     flow_dir_data[np.where(node_info == -1)] = 0
 
     flow_dir = GeoGrid(flow_dir_data,
-                       copy.deepcopy(dem.crs), copy.deepcopy(dem.transform),
-                       copy.deepcopy(dem.metadata), nodata=nodata_flow_dir)
+                       copy.deepcopy(dem.dataarray.attrs['crs']),
+                       copy.deepcopy(dem.dataarray.attrs['transform']),
+                       copy.deepcopy(dem.dataarray.attrs['metadata']),
+                       nodata=nodata_flow_dir)
 
     return flow_dir
 
@@ -158,10 +160,12 @@ def build_receiver(flow_dir: GeoGrid):
     if is_verbose():
         print("Building receiver grid ...")
 
-    receiver_data = _build_receiver_impl(flow_dir.data)
+    receiver_data = _build_receiver_impl(flow_dir.dataarray.data)
     receiver = GeoGrid(receiver_data,
-                       copy.deepcopy(flow_dir.crs), copy.deepcopy(flow_dir.transform),
-                       copy.deepcopy(flow_dir.metadata), nodata=[-1, -1])
+                       copy.deepcopy(flow_dir.dataarray.attrs['crs']),
+                       copy.deepcopy(flow_dir.dataarray.attrs['transform']),
+                       copy.deepcopy(flow_dir.dataarray.attrs['metadata']),
+                       nodata=[-1, -1])
 
     return receiver
 
@@ -178,7 +182,7 @@ def build_ordered_array(receiver: GeoGrid):
     if is_verbose():
         print("Building ordered array ...")
 
-    ordered_nodes = _build_ordered_array_impl(receiver.data)
+    ordered_nodes = _build_ordered_array_impl(receiver.dataarray.data)
 
     return ordered_nodes
 
@@ -189,17 +193,19 @@ def flow_accumulation(receiver: GeoGrid, ordered_nodes: np.ndarray):
     if is_verbose():
         print("Accumulating flow ...")
 
-    dx = np.abs(receiver.transform[0])
-    dy = np.abs(receiver.transform[4])
+    dx = np.abs(receiver.dataarray.attrs['transform'][0])
+    dy = np.abs(receiver.dataarray.attrs['transform'][4])
     cellsize = dx * dy
-    drainage_area_data = _flow_accumulation_impl(receiver.data, ordered_nodes, cellsize)
+    drainage_area_data = _flow_accumulation_impl(receiver.dataarray.data, ordered_nodes, cellsize)
 
     nodata = -1
-    drainage_area_data[np.where(receiver.data[:, :, 0] == receiver.nodata[0])] = nodata
+    drainage_area_data[np.where(receiver.dataarray.data[:, :, 0] == receiver.dataarray.attrs['nodata'][0])] = nodata
 
     drainage_area = GeoGrid(drainage_area_data,
-                            copy.deepcopy(receiver.crs), copy.deepcopy(receiver.transform),
-                            copy.deepcopy(receiver.metadata), nodata=nodata)
+                            copy.deepcopy(receiver.dataarray.attrs['crs']),
+                            copy.deepcopy(receiver.dataarray.attrs['transform']),
+                            copy.deepcopy(receiver.dataarray.attrs['metadata']),
+                            nodata=nodata)
 
     return drainage_area
 
@@ -212,7 +218,7 @@ def build_stream_network(receiver: GeoGrid, drainage_area: GeoGrid,
 
     receiver_in_stream = copy.deepcopy(receiver)
     # all nodes with drainage_area smaller than the threshold are set as nodata
-    receiver_in_stream.data[drainage_area.data < drainage_area_threshold] = np.array(receiver.nodata)
+    receiver_in_stream.dataarray.data[drainage_area.dataarray.data < drainage_area_threshold] = np.array(receiver.dataarray.attrs['nodata'])
 
     stream_network = StreamNetwork(receiver_in_stream)
 
@@ -237,11 +243,11 @@ def extract_catchment_mask(x, y, receiver: GeoGrid,
 
     if stream_network is None:
         print("Warning: no stream_network is given")
-        outlet_i, outlet_j = xy_to_rowcol(x, y, receiver.transform)
+        outlet_i, outlet_j = receiver.xy_to_rowcol(x, y)
     else:
         outlet_i, outlet_j = stream_network.nearest_to_xy(x, y)
 
     mask = _build_catchment_mask_impl(outlet_i, outlet_j,
-                                      receiver.data, ordered_nodes)
+                                      receiver.dataarray.data, ordered_nodes)
 
     return mask

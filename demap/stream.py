@@ -87,7 +87,7 @@ class _StreamBase:
         if isinstance(data_source, GeoGrid):
             i_list = self.dataset['rows'].data
             j_list = self.dataset['cols'].data
-            val = data_source.data[i_list, j_list]
+            val = data_source.dataarray.data[i_list, j_list]
 
         if isinstance(data_source, np.ndarray):
             i_list = self.dataset['rows'].data
@@ -264,10 +264,10 @@ class StreamNetwork(_StreamBase):
         return f'StreamNetwork\n{self.dataset.__repr__()}'
 
     def _build_from_receiver(self, receiver: GeoGrid):
-        transform = copy.deepcopy(receiver.transform)
-        crs = copy.deepcopy(receiver.crs)
+        transform = copy.deepcopy(receiver.dataarray.attrs['transform'])
+        crs = copy.deepcopy(receiver.dataarray.attrs['crs'])
 
-        ordered_nodes = _build_ordered_array_impl(receiver.data)
+        ordered_nodes = _build_ordered_array_impl(receiver.dataarray.data)
         rows = ordered_nodes[:, 0]
         cols = ordered_nodes[:, 1]
         n_nodes = len(ordered_nodes)
@@ -275,7 +275,7 @@ class StreamNetwork(_StreamBase):
         self._build_hashmap(rows=rows, cols=cols)
 
         # receiver_list follow the order of ordered_nodes
-        receiver_list = receiver.data[rows, cols]
+        receiver_list = receiver.dataarray.data[rows, cols]
 
         downstream = -np.ones(n_nodes, dtype=INT)
 

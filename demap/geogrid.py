@@ -1,9 +1,11 @@
 import numpy as np
+import xarray as xr
 import copy
 import math
 import richdem
 
 from .helpers import rowcol_to_xy, xy_to_rowcol
+from ._base import INT
 from .swath import Swath
 
 
@@ -11,80 +13,90 @@ class GeoGrid:
     """A grid with georeferencing and metadata"""
 
     def __init__(self, data, crs, transform, metadata, nodata=None):
-        self.data = data
-        self.crs = crs
-        if not self.crs.is_projected:
-            raise ValueError("DEMAP only works with projected coordinate system.\
-                Please convert your data projection using e.g. QGIS/ArcGIS/GDAL.")
-        self.transform = transform
-        self.metadata = metadata
+        nrows, ncols = data.shape[0:2]
 
-        self.metadata['crs'] = self.crs
-        self.metadata['transform'] = self.transform
+        self.dataarray = xr.DataArray(
+            data,
+            attrs = {
+                'crs': crs,
+                'transform': transform,
+                'metadata': metadata,
+            }
+        )
+        self.dataarray = self.dataarray.rename({'dim_0': 'rows', 'dim_1': 'cols'})
+        self.dataarray = self.dataarray.assign_coords(rows = np.arange(nrows, dtype=INT))
+        self.dataarray = self.dataarray.assign_coords(cols = np.arange(ncols, dtype=INT))
+
+        if self.dataarray.attrs['crs'] is None or not self.dataarray.attrs['crs'].is_projected:
+            #raise ValueError("DEMAP only works with projected coordinate system. "+\
+            #    "Please convert your data projection using e.g. QGIS/ArcGIS/GDAL.")
+            print("Warning: DEMAP only works with projected coordinate system. "+\
+                "Please convert your data projection using e.g. QGIS/ArcGIS/GDAL.")
 
         if nodata is not None:
-            self.nodata = nodata
-            self.metadata['nodata'] = nodata
+            self.dataarray.attrs['nodata'] = nodata
         else:
-            self.nodata = self.metadata.get('nodata', None)
+            try:
+                self.dataarray.attrs['nodata'] = metadata.get('nodata', None)
+            except:
+                self.dataarray.attrs['nodata'] = None
 
-        if self.nodata is None:
-            print('Warning: nodata value is None. If this is a DEM file,\
-                it may cause problems.')
+        if self.dataarray.attrs['nodata'] is None:
+            print('Warning: nodata value is None. If this is a DEM file, it may cause problems.')
 
     def __str__(self):
-        return f'GeoGrid:\n{self.data}\nCRS: {self.crs}\nTransform: {self.transform}'
+        return f'GeoGrid\n{self.dataarray.__str__()}'
 
     def __repr__(self):
-        return f'GeoGrid({self.data})'
+        return f'GeoGrid\n{self.dataarray.__repr__()}'
 
     def to_rdarray(self):
         if self._valid_for_richdem():
-            out_rd = richdem.rdarray(self.data, no_data=self.nodata)
-            out_rd.geotransform = self.transform.to_gdal()
+            out_rd = richdem.rdarray(self.dataarray.data, no_data=self.dataarray.attrs['nodata'])
+            out_rd.geotransform = self.dataarray.attrs['transform'].to_gdal()
 
             return out_rd
 
     def _valid_for_richdem(self):
-        if (self.nodata is None) or np.isnan(self.nodata):
-            raise ValueError("Invalid nodata value for richdem: {}".format(self.nodata))
-        if np.sum(np.isnan(self.data)) > 0:
+        if (self.dataarray.attrs['nodata'] is None) or np.isnan(self.dataarray.attrs['nodata']):
+            raise ValueError("Invalid nodata value for richdem: {}".format(self.dataarray.attrs['nodata']))
+        if np.sum(np.isnan(self.dataarray.data)) > 0:
             raise ValueError("Invalid input for richdem: the grid contains nan value")
 
         return True
 
     def rowcol_to_xy(self, row, col):
-        return rowcol_to_xy(row, col, self.transform)
+        return rowcol_to_xy(row, col, self.dataarray.attrs['transform'])
 
     def xy_to_rowcol(self, x, y):
-        return xy_to_rowcol(x, y, self.transform)
+        return xy_to_rowcol(x, y, self.dataarray.attrs['transform'])
 
     def cartopy_crs(self):
         import cartopy.crs as ccrs
-        return ccrs.epsg(self.crs.to_epsg())
+        return ccrs.epsg(self.dataarray.attrs['crs'].to_epsg())
 
     def for_plotting(self):
-        data = copy.deepcopy(self.data)
+        data = copy.deepcopy(self.dataarray.data)
         data = data.astype(dtype=float)
-        data[np.where(data == self.nodata)] = np.nan
+        data[np.where(data == self.dataarray.attrs['nodata'])] = np.nan
         return data
 
     def plotting_extent(self):
         """
         Returns an extent for for matplotlib's imshow (left, right, bottom, top)
         """
-        rows, cols = self.data.shape[0:2]
-        left, top = self.transform * (0, 0)
-        right, bottom = self.transform * (cols, rows)
+        rows, cols = self.dataarray.data.shape[0:2]
+        left, top = self.dataarray.attrs['transform'] * (0, 0)
+        right, bottom = self.dataarray.attrs['transform'] * (cols, rows)
         extent = (left, right, bottom, top)
 
         return extent
 
     def line_profile(self, x1, y1, x2, y2, interpolation=True):
-        if interpolation:
-            get_value_along_line = interp_along_line
-        else:
-            get_value_along_line = nearest_along_line
+        #if interpolation:
+        #    get_value_along_line = interp_along_line
+        #else:
+        #    get_value_along_line = nearest_along_line
 
         row1, col1 = self.xy_to_rowcol(x1, y1)
         row2, col2 = self.xy_to_rowcol(x2, y2)
@@ -97,9 +109,9 @@ class GeoGrid:
         
         if interpolation:
             from scipy import ndimage
-            z = ndimage.map_coordinates(self.data, np.vstack((i_list, j_list)))
+            z = ndimage.map_coordinates(self.dataarray.data, np.vstack((i_list, j_list)))
         else:
-            z = self.data[i_list.astype(int), j_list.astype(int)]
+            z = self.dataarray.data[i_list.astype(int), j_list.astype(int)]
 
         x_list, y_list = self.rowcol_to_xy(i_list, j_list)
         dx = x_list[1:] - x_list[:-1]
@@ -153,9 +165,9 @@ class GeoGrid:
         
         if interpolation:
             from scipy import ndimage
-            z = ndimage.map_coordinates(self.data, np.vstack((i_list, j_list)))
+            z = ndimage.map_coordinates(self.dataarray.data, np.vstack((i_list, j_list)))
         else:
-            z = self.data[i_list.astype(int), j_list.astype(int)]
+            z = self.dataarray.data[i_list.astype(int), j_list.astype(int)]
 
         z = z.reshape((n_perp, n_para))
 
