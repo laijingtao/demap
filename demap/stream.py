@@ -33,6 +33,9 @@ class _StreamBase:
     def __repr__(self):
         return f'Stream\n{self.dataset.__repr__()}'
 
+    def _ordered_nodes(self):
+        return np.array([self.dataset['rows'].data, self.dataset['cols'].data]).transpose()
+
     def crs(self):
         return self.dataset.attrs['crs']
 
@@ -80,7 +83,7 @@ class _StreamBase:
         return self.dataset['rows'].data[k], self.dataset['cols'].data[k]
 
     def get_value(self, data_source: Union[GeoGrid, 'StreamNetwork', np.ndarray],
-                  variable_name=None):
+                  var_name=None):
         if not isinstance(data_source, (GeoGrid, StreamNetwork, np.ndarray)):
             raise TypeError("Unsupported data_source type")
 
@@ -95,17 +98,17 @@ class _StreamBase:
             val = data_source[i_list, j_list]
 
         if isinstance(data_source, StreamNetwork):
-            if variable_name is None:
-                raise ValueError("variable_name cannot be None when getting data from StreamNetwork")
+            if var_name is None:
+                raise ValueError("var_name cannot be None when getting data from StreamNetwork")
             else:
                 index_of = data_source.index_of
                 val = np.zeros(len(self.dataset['flow_order']))
                 for k in range(len(self.dataset['flow_order'])):
                     i, j = self.dataset['rows'][k], self.dataset['cols'][k]
-                    val[k] = data_source.dataset[variable_name].data[index_of(i, j)]
+                    val[k] = data_source.dataset[var_name].data[index_of(i, j)]
 
-        if variable_name is not None:
-            self.dataset[variable_name] = (('flow_order'), val)
+        if var_name is not None:
+            self.dataset[var_name] = (('flow_order'), val)
 
         return val
 
@@ -290,7 +293,7 @@ class StreamNetwork(_StreamBase):
         return rows, cols, downstream, crs, transform
 
     def get_upstream_distance(self):
-        ordered_nodes = np.array([self.dataset['rows'].data, self.dataset['cols'].data]).transpose()
+        ordered_nodes = self._ordered_nodes()
         downstream = self.dataset['downstream'].data
         pseudo_receiver = _build_pseudo_receiver_from_network_impl(
             ordered_nodes, downstream)
@@ -462,7 +465,7 @@ class StreamNetwork(_StreamBase):
 
         return z
 
-
+# TODO: this is not compatible with new StreamNetwork, fix later
 def merge_stream_network(network1: StreamNetwork, network2: StreamNetwork):
 
     ordered_nodes = np.append(network1.ordered_nodes, network2.ordered_nodes, axis=0)

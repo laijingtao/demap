@@ -12,15 +12,15 @@ from .helpers import transform_to_ndarray
 
 
 def calculate_chi(stream_network: StreamNetwork, drainage_area: GeoGrid, 
-                  ref_concavity=0.45, ref_drainage_area=1e6, **kwargs):
+                  ref_concavity=0.45, ref_drainage_area=1.0, **kwargs):
     """
     Calculate chi and save it in the given StreamNetwork.
     """
     if is_verbose():
         print("Calculating chi ...")
 
-    ordered_nodes = stream_network.ordered_nodes
-    downstream = stream_network.downstream
+    ordered_nodes = stream_network._ordered_nodes()
+    downstream = stream_network.dataset['downstream'].data
 
     pseudo_receiver = _build_pseudo_receiver_from_network_impl(
         ordered_nodes, downstream)
@@ -35,59 +35,38 @@ def calculate_chi(stream_network: StreamNetwork, drainage_area: GeoGrid,
             raise KeyError("A DEM is needed for auto concavity method.")
         concavity_range = kwargs.get('concavity_range', [0.3, 0.7])
         chi_grid, best_fit_theta, theta_list, misfit_list = _calculate_chi_auto_concavity(
-            stream_network, dem.data, pseudo_receiver, ordered_nodes,
-            dist_up_grid, drainage_area.data, ref_drainage_area, concavity_range=concavity_range)
+            stream_network, dem.dataarray.data, pseudo_receiver, ordered_nodes,
+            dist_up_grid, drainage_area.dataarray.data, ref_drainage_area, concavity_range=concavity_range)
     else:
         chi_grid = _calculate_chi_from_receiver_impl(
-            pseudo_receiver, ordered_nodes, dist_up_grid, drainage_area.data,
+            pseudo_receiver, ordered_nodes, dist_up_grid, drainage_area.dataarray.data,
             ref_concavity, ref_drainage_area)
 
-    stream_network.get_value(chi_grid, attr_name='chi')
+    stream_network.get_value(chi_grid, var_name='chi')
 
     if ref_concavity == 'auto':
         return best_fit_theta, theta_list, misfit_list
 
 
-'''
-def calculate_chi_grid(drainage_area: GeoGrid, receiver: GeoGrid,
-                       ordered_nodes: np.ndarray,
-                       ref_concavity=0.45, ref_drainage_area=1e6, **kwargs):
-
-    if is_verbose():
-        print("Calculating chi ...")
-
-    affine_matrix = transform_to_ndarray(drainage_area.transform)
-
-    chi_data = _calculate_chi_from_receiver_impl(drainage_area.data,
-                                                 receiver.data, ordered_nodes,
-                                                 ref_concavity, ref_drainage_area,
-                                                 affine_matrix)
-
-    chi = GeoGrid(chi_data, copy.deepcopy(receiver.crs),
-                  copy.deepcopy(receiver.transform),
-                  copy.deepcopy(receiver.metadata), nodata=-1)
-
-    return chi
-'''
-
-
 def calculate_chi_grid(receiver: GeoGrid, ordered_nodes: np.ndarray, drainage_area: GeoGrid, 
-                       ref_concavity=0.45, ref_drainage_area=1e6, **kwargs):
+                       ref_concavity=0.45, ref_drainage_area=1, **kwargs):
 
     if is_verbose():
         print("Calculating chi ...")
 
-    dx = np.abs(receiver.transform[0])
-    dy = np.abs(receiver.transform[4])
-    dist_up = _calculate_dist_up_impl(receiver.data, ordered_nodes, dx, dy)
+    dx = np.abs(receiver.dataarray.attrs['transform'][0])
+    dy = np.abs(receiver.dataarray.attrs['transform'][4])
+    dist_up = _calculate_dist_up_impl(receiver.dataarray.data, ordered_nodes, dx, dy)
 
-    chi_data = _calculate_chi_from_receiver_impl(receiver.data, ordered_nodes,
-                                                 dist_up, drainage_area.data,
+    chi_data = _calculate_chi_from_receiver_impl(receiver.dataarray.data, ordered_nodes,
+                                                 dist_up, drainage_area.dataarray.data,
                                                  ref_concavity, ref_drainage_area)
 
-    chi = GeoGrid(chi_data, copy.deepcopy(receiver.crs),
-                  copy.deepcopy(receiver.transform),
-                  copy.deepcopy(receiver.metadata), nodata=-1)
+    chi = GeoGrid(chi_data, 
+                  copy.deepcopy(receiver.dataarray.attrs['crs']),
+                  copy.deepcopy(receiver.dataarray.attrs['transform']),
+                  copy.deepcopy(receiver.dataarray.attrs['metadata']),
+                  nodata=-1)
 
     return chi
 
@@ -178,8 +157,8 @@ def calculate_ksn(dem: GeoGrid, drainage_area: GeoGrid,
             ksn[index_of(row, col)] = ksn_s[k]
 
     '''
-    downstream = stream_network.downstream
-    dist_up = stream_network.dist_up
+    downstream = stream_network.dataset['downstream'].data
+    dist_up = stream_network.dataset['distance_upstream'].data
 
     z = stream_network.smooth_profile(dem)
 
@@ -193,4 +172,4 @@ def calculate_ksn(dem: GeoGrid, drainage_area: GeoGrid,
 
     ksn = slope * A_theta
 
-    stream_network.attrs['ksn'] = ksn
+    stream_network.dataset['ksn'] = (('flow_order'), ksn)
