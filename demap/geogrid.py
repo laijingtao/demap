@@ -71,6 +71,12 @@ class GeoGrid:
     def xy_to_rowcol(self, x, y):
         return xy_to_rowcol(x, y, self.dataarray.attrs['transform'])
 
+    def dx(self):
+        return np.abs(self.dataarray.attrs['transform'][0])
+
+    def dy(self):
+        return np.abs(self.dataarray.attrs['transform'][4])
+
     def cartopy_crs(self):
         import cartopy.crs as ccrs
         return ccrs.epsg(self.dataarray.attrs['crs'].to_epsg())
