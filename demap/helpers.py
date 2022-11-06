@@ -27,6 +27,27 @@ def xy_to_rowcol(x, y, transform: Affine):
     return row, col
 
 
+def xy_to_latlon(x, y, crs):
+    import pyproj
+    
+    proj_crs = pyproj.crs.CRS.from_wkt(crs.wkt)
+    p = pyproj.Proj(proj_crs)
+    
+    lon, lat = p(x, y, inverse=True)
+    
+    return lat, lon
+
+def latlon_to_xy(lat, lon, crs):
+    import pyproj
+    
+    proj_crs = pyproj.crs.CRS.from_wkt(crs.wkt)
+    p = pyproj.Proj(proj_crs)
+    
+    x, y = p(lon, lat)
+    
+    return x, y
+
+
 def transform_to_ndarray(transform: Affine) -> np.ndarray:
     a = transform
     b = np.zeros((3, 3))

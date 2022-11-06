@@ -3,7 +3,7 @@ import xarray as xr
 import copy
 from typing import Union
 
-from .helpers import rowcol_to_xy, xy_to_rowcol
+from .helpers import rowcol_to_xy, xy_to_rowcol, latlon_to_xy, xy_to_latlon
 from ._base import is_verbose, INT
 from .geogrid import GeoGrid
 from ._impl import (_build_ordered_array_impl,
@@ -47,6 +47,12 @@ class _StreamBase:
 
     def xy_to_rowcol(self, x, y):
         return xy_to_rowcol(x, y, self.dataset.attrs['transform'])
+
+    def latlon_to_xy(self, lat, lon):
+        return latlon_to_xy(lat, lon, self.dataset.attrs['crs'])
+
+    def xy_to_latlon(self, x, y):
+        return xy_to_latlon(x, y, self.dataset.attrs['crs'])
 
     def dx(self):
         return np.abs(self.dataset.attrs['transform'][0])

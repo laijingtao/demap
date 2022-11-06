@@ -4,7 +4,7 @@ import copy
 import math
 import richdem
 
-from .helpers import rowcol_to_xy, xy_to_rowcol
+from .helpers import rowcol_to_xy, xy_to_rowcol, latlon_to_xy, xy_to_latlon
 from ._base import INT
 from .swath import Swath
 
@@ -70,6 +70,12 @@ class GeoGrid:
 
     def xy_to_rowcol(self, x, y):
         return xy_to_rowcol(x, y, self.dataarray.attrs['transform'])
+
+    def latlon_to_xy(self, lat, lon):
+        return latlon_to_xy(lat, lon, self.dataarray.attrs['crs'])
+
+    def xy_to_latlon(self, x, y):
+        return xy_to_latlon(x, y, self.dataarray.attrs['crs'])
 
     def dx(self):
         return np.abs(self.dataarray.attrs['transform'][0])
