@@ -158,6 +158,9 @@ class Stream(_StreamBase):
         self.dataset['distance_upstream'] = (["flow_order"], dist_up)
         return self.dataset['distance_upstream']
 
+    def length(self):
+        return self.dataset['distance_upstream'].data[0] - self.dataset['distance_upstream'].data[-1]
+
     def dir_vector_at_rowcol(self, row, col, smooth_range=1e3):
         idx = self.index_of(row, col)
         dist_up = self.dataset['distance_upstream'].data
@@ -366,7 +369,7 @@ class StreamNetwork(_StreamBase):
         streams = np.array(streams)
         if mode_flag == 1:
             # sort by length again for tributary mode, note it's the length of tributary stream
-            length_list = np.array([st.dataset['distance_upstream'][0]-st.dataset['distance_upstream'][-1] for st in streams])
+            length_list = np.array([st.length() for st in streams])
             sort_idx = np.argsort(length_list)[::-1]
             streams = streams[sort_idx]
 
