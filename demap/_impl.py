@@ -6,16 +6,7 @@
 
 import numpy as np
 
-from ._base import INT, USE_NUMBA
-
-
-def _speed_up(func):
-    """A conditional decorator that use numba to speed up the function"""
-    if USE_NUMBA:
-        import numba
-        return numba.njit(func)
-    else:
-        return func
+from ._base import INT, _speed_up
 
 
 @_speed_up

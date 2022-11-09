@@ -201,6 +201,9 @@ class Stream(_StreamBase):
         return np.mean(value[idx_up:idx_down+1])
 
     def smooth_value(self, value, smooth_range=1e3):
+        if isinstance(value, str):
+            value = self.dataset[value]
+        
         smooth_value = value.copy()
         rows = self.dataset['rows'].data
         cols = self.dataset['cols'].data

@@ -18,3 +18,12 @@ def is_verbose():
 def set_verbose(verbose_mode):
     global VERBOSE_MODE
     VERBOSE_MODE = verbose_mode
+
+
+def _speed_up(func):
+    """A conditional decorator that use numba to speed up the function"""
+    if USE_NUMBA:
+        import numba
+        return numba.njit(func)
+    else:
+        return func
