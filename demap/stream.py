@@ -80,10 +80,15 @@ class _StreamBase:
         """
         Return the stream node nearest to given x, y geographic coordinates.
         """
-        row, col = self.xy_to_rowcol(x, y)
-        d_i = np.abs(self.dataset['rows'].data - row)
-        d_j = np.abs(self.dataset['cols'].data - col)
-        dist = np.sqrt(np.power(d_i, 2) + np.power(d_j, 2))
+        #row, col = self.xy_to_rowcol(x, y)
+        #d_i = np.abs(self.dataset['rows'].data - row)
+        #d_j = np.abs(self.dataset['cols'].data - col)
+
+        x_list, y_list = self.rowcol_to_xy(self.dataset['rows'].data, self.dataset['cols'].data)
+        d_x = np.abs(x_list - x)
+        d_y = np.abs(y_list - y)
+
+        dist = np.sqrt(np.power(d_x, 2) + np.power(d_y, 2))
         k = np.argmin(dist)
 
         return self.dataset['rows'].data[k], self.dataset['cols'].data[k]
