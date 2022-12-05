@@ -73,7 +73,7 @@ def extract_catchment_mask(x, y, receiver: GeoGrid,
         print("Extracting catchment mask ...")
 
     if stream_network is None:
-        print("Warning: no stream_network is given")
+        print("Warning: no stream_network is given, using exact x,y coordinates as catchment outlet.")
         outlet_i, outlet_j = receiver.xy_to_rowcol(x, y)
     else:
         outlet_i, outlet_j = stream_network.nearest_to_xy(x, y)
@@ -82,3 +82,76 @@ def extract_catchment_mask(x, y, receiver: GeoGrid,
                                       receiver.dataarray.data, ordered_nodes)
 
     return mask
+
+def extract_catchment_boundary(x, y, receiver: GeoGrid,
+                               ordered_nodes: np.ndarray,
+                               stream_network: StreamNetwork = None,
+                               **kwargs):
+    # TODO - does not work perfectly
+    
+    from scipy import spatial
+
+    if is_verbose():
+        print("Extracting catchment boundary ...")
+
+    if stream_network is None:
+        print("Warning: no stream_network is given, using exact x,y coordinates as catchment outlet.")
+        outlet_i, outlet_j = receiver.xy_to_rowcol(x, y)
+    else:
+        outlet_i, outlet_j = stream_network.nearest_to_xy(x, y)
+
+    mask = _build_catchment_mask_impl(outlet_i, outlet_j,
+                                      receiver.dataarray.data, ordered_nodes)
+    
+    nrows, ncols, _ = receiver.dataarray.data.shape
+    jj, ii = np.meshgrid(np.arange(ncols), np.arange(nrows))
+    
+    nodes_in = [ii[mask == 1], jj[mask == 1]]
+    nodes_in = np.array(nodes_in).transpose()
+
+    is_head = np.ones((nrows, ncols), dtype=bool)
+    is_head[mask == 0] = False
+
+    receiver_data = receiver.dataarray.data
+
+    for k in range(len(nodes_in)):
+        i, j = nodes_in[k]
+        r_i, r_j = receiver_data[i, j]
+        is_head[r_i, r_j]  = False
+
+    mask_grad_x, mask_grad_y = np.gradient(mask)
+    mask_grad = np.sqrt(np.power(mask_grad_x, 2) + np.power(mask_grad_y, 2))
+    is_edge = np.zeros((nrows, ncols), dtype=bool)
+    is_edge[mask_grad > 0] = True # boundary has non-zero gradient in mask
+    is_edge[mask == 0] = False # boundary is in this catchment
+    is_edge[is_head != 0] = False # boundary must be a channel head
+
+    boundary_i = np.array(ii[is_edge == True])
+    boundary_j = np.array(jj[is_edge == True])
+
+    # sorting the boundary nodes
+    # start from outlet, then add the closest node one by one.
+    points = list(range(len(boundary_i)))
+    in_list = np.zeros(len(points), dtype=bool)
+    points_order = []
+    k = 0
+    points_order.append(points.pop(k))
+    in_list[points_order[-1]] = True
+    while len(points) > 0:
+        curr_i = boundary_i[points_order[-1]]
+        curr_j = boundary_j[points_order[-1]]
+        dist = np.sqrt(np.power(boundary_i[in_list == False] - curr_i, 2) + np.power(boundary_j[in_list == False] - curr_j, 2))
+        k = dist.argmin()
+        points_order.append(points.pop(k))
+        in_list[points_order[-1]] = True
+
+    boundary_i = boundary_i[points_order]
+    boundary_j = boundary_j[points_order]
+    
+    # make the boundary closed
+    boundary_i = np.append(boundary_i, boundary_i[0])
+    boundary_j = np.append(boundary_j, boundary_j[0])
+
+    boundary_x, boundary_y = receiver.rowcol_to_xy(boundary_i, boundary_j)
+
+    return boundary_x, boundary_y

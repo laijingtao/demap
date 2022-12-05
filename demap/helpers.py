@@ -11,6 +11,9 @@ def rowcol_to_xy(row, col, transform: Affine):
     This function will return the coordinates of the center of the pixel.
     """
     # offset for center
+    if isinstance(row, list):
+        row = np.array(row)
+        col = np.array(col)
     row_off = 0.5
     col_off = 0.5
     return transform * (col+col_off, row+row_off)
