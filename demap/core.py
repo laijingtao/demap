@@ -10,7 +10,7 @@ from ._impl import _build_catchment_mask_impl
 
 def process_dem(dem, **kwargs):
     if isinstance(dem, str):
-        from .io import load
+        from .inout import load
         dem = load(dem)
     dem_cond = prepare_dem(dem, **kwargs)
     receiver = flow_direction(dem_cond)
