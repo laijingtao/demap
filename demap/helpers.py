@@ -33,7 +33,7 @@ def xy_to_rowcol(x, y, transform: Affine):
 def xy_to_latlon(x, y, crs):
     import pyproj
     
-    proj_crs = pyproj.crs.CRS.from_wkt(crs.wkt)
+    proj_crs = pyproj.crs.CRS.from_wkt(crs.to_wkt())
     p = pyproj.Proj(proj_crs)
     
     lon, lat = p(x, y, inverse=True)
@@ -43,7 +43,7 @@ def xy_to_latlon(x, y, crs):
 def latlon_to_xy(lat, lon, crs):
     import pyproj
     
-    proj_crs = pyproj.crs.CRS.from_wkt(crs.wkt)
+    proj_crs = pyproj.crs.CRS.from_wkt(crs.to_wkt())
     p = pyproj.Proj(proj_crs)
     
     x, y = p(lon, lat)
