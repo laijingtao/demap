@@ -193,6 +193,7 @@ class Stream(_StreamBase):
         dist_up = self.dataset['distance_upstream'].data
         in_range = np.abs(dist_up - dist_up[idx]) <= smooth_range*0.5
 
+        '''
         k = idx
         while k > 0 and in_range[k]:
             k -= 1
@@ -204,6 +205,8 @@ class Stream(_StreamBase):
         idx_down = k
 
         return np.mean(value[idx_up:idx_down+1])
+        '''
+        return np.mean(value[in_range == True])
 
     def smooth_value(self, value, smooth_range=1e3):
         if isinstance(value, str):
