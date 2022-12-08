@@ -176,6 +176,8 @@ def calculate_ksn(dem: GeoGrid, drainage_area: GeoGrid,
 
     stream_network.dataset['ksn'] = (('flow_order'), ksn)
 
+    return stream_network
+
 
 def stream_segmentation(stream, smooth_range=1e3, tvd_lamda=1000):
     if isinstance(stream, Stream):
