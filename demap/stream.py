@@ -112,11 +112,24 @@ class _StreamBase:
             if var_name is None:
                 raise ValueError("var_name cannot be None when getting data from StreamNetwork")
             else:
+                nrows = data_source.dataset['rows'].data.max()+1
+                ncols = data_source.dataset['cols'].data.max()+1
+                val_grid = np.empty((nrows, ncols), dtype=data_source.dataset[var_name].dtype)
+                i_list_source = data_source.dataset['rows'].data
+                j_list_source = data_source.dataset['cols'].data
+                val_grid[i_list_source, j_list_source] = data_source.dataset[var_name].data
+
+                i_list = self.dataset['rows'].data
+                j_list = self.dataset['cols'].data
+                val = val_grid[i_list, j_list]
+
+                '''
                 index_of = data_source.index_of
                 val = np.zeros(len(self.dataset['flow_order']))
                 for k in range(len(self.dataset['flow_order'])):
                     i, j = self.dataset['rows'][k], self.dataset['cols'][k]
                     val[k] = data_source.dataset[var_name].data[index_of(i, j)]
+                '''
 
         if var_name is not None:
             self.dataset[var_name] = (('flow_order'), val)
