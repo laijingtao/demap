@@ -114,10 +114,16 @@ class _StreamBase:
             else:
                 nrows = data_source.dataset['rows'].data.max()+1
                 ncols = data_source.dataset['cols'].data.max()+1
-                val_grid = np.empty((nrows, ncols), dtype=data_source.dataset[var_name].dtype)
+                if var_name in data_source.dataset:
+                    source_dataarray = data_source.dataset[var_name]
+                elif var_name in data_source.dataset.attrs:
+                    source_dataarray = data_source.dataset.attrs[var_name]
+                else:
+                    raise KeyError('{} not found'.format(var_name))
+                val_grid = np.empty((nrows, ncols), dtype=source_dataarray.dtype)
                 i_list_source = data_source.dataset['rows'].data
                 j_list_source = data_source.dataset['cols'].data
-                val_grid[i_list_source, j_list_source] = data_source.dataset[var_name].data
+                val_grid[i_list_source, j_list_source] = source_dataarray.data
 
                 i_list = self.dataset['rows'].data
                 j_list = self.dataset['cols'].data
