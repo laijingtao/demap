@@ -504,6 +504,37 @@ class StreamNetwork(_StreamBase):
 
         return z
 
+    def get_stream_order(self, method='strahler'):
+        downstream = self.dataset['downstream'].data
+
+        num_of_donor = np.zeros_like(downstream)
+        stream_order = np.ones_like(downstream)
+
+        if method == 'strahler':
+            for k in range(len(stream_order)):
+                if downstream[k] != -1:
+                    if num_of_donor[downstream[k]] > 0:
+                        if stream_order[k] > stream_order[downstream[k]]:
+                            stream_order[downstream[k]] = stream_order[k]
+                        elif stream_order[k] == stream_order[downstream[k]]:
+                            stream_order[downstream[k]] += 1
+                    else:
+                        stream_order[downstream[k]] = stream_order[k]
+                    num_of_donor[downstream[k]] += 1
+        elif method == 'shreve':
+            for k in range(len(stream_order)):
+                if downstream[k] != -1:
+                    if num_of_donor[downstream[k]] > 0:
+                        stream_order[downstream[k]] += stream_order[k]
+                    else:
+                        stream_order[downstream[k]] = stream_order[k]
+                    num_of_donor[downstream[k]] += 1
+        else:
+            raise KeyError('Unkown method \'{}\'. strahler or shreve?'.format(method))
+
+        self.dataset['stream_order'] = (('flow_order'), stream_order)
+        return self.dataset['stream_order']
+
 # TODO: this is not compatible with new StreamNetwork, fix later
 def merge_stream_network(network1: StreamNetwork, network2: StreamNetwork):
 
