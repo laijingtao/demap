@@ -120,6 +120,7 @@ class _StreamBase:
                     source_dataarray = data_source.dataset.attrs[var_name]
                 else:
                     raise KeyError('{} not found'.format(var_name))
+                '''
                 val_grid = np.empty((nrows, ncols), dtype=source_dataarray.dtype)
                 i_list_source = data_source.dataset['rows'].data
                 j_list_source = data_source.dataset['cols'].data
@@ -128,14 +129,13 @@ class _StreamBase:
                 i_list = self.dataset['rows'].data
                 j_list = self.dataset['cols'].data
                 val = val_grid[i_list, j_list]
-
                 '''
+                # same performance but less memory
+                i_list = self.dataset['rows'].data
+                j_list = self.dataset['cols'].data
                 index_of = data_source.index_of
-                val = np.zeros(len(self.dataset['flow_order']))
-                for k in range(len(self.dataset['flow_order'])):
-                    i, j = self.dataset['rows'][k], self.dataset['cols'][k]
-                    val[k] = data_source.dataset[var_name].data[index_of(i, j)]
-                '''
+                index_list = [index_of(i_list[k], j_list[k]) for k in range(len(i_list))]
+                val = source_dataarray.data[index_list]
 
         if var_name is not None:
             self.dataset[var_name] = (('flow_order'), val)
