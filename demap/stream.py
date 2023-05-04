@@ -345,7 +345,7 @@ class StreamNetwork(_StreamBase):
         self.dataset['distance_upstream'] = (["flow_order"], dist_up)
         return self.dataset['distance_upstream']
 
-    def to_streams(self, mode='tributary'):
+    def to_streams(self, mode='tributary', var_to_copy=None):
         if is_verbose():
             print("Converting stream network to streams ...")
 
@@ -356,6 +356,10 @@ class StreamNetwork(_StreamBase):
             mode_flag = 1
         else:
             mode_flag = 2
+
+        if var_to_copy is not None:
+            if isinstance(var_to_copy, str):
+                var_to_copy = [var_to_copy]
 
         rows = self.dataset['rows'].data
         cols = self.dataset['cols'].data
@@ -393,6 +397,11 @@ class StreamNetwork(_StreamBase):
 
             # make sure the dist_up is relative to outlet of the stream network
             new_stream.dataset['distance_upstream'] += self.dataset['distance_upstream'][stream_idx[-1]]
+
+            if var_to_copy is not None:
+                for var in var_to_copy:
+                    val = self.dataset[var].data[stream_idx]
+                    new_stream.dataset[var] = (('flow_order'), val)
 
             streams.append(new_stream)
 
@@ -561,6 +570,11 @@ def merge_stream_network(network1: StreamNetwork, network2: StreamNetwork):
 
 
 def stream_segmentation(stream, smooth_range=1e3, tvd_lamda=1000):
+    # Note: Because shp file only accepts one value for each line segment,
+    # we need to divide one stream profile into several segments based on their
+    # similarity in ksn. This is a quick and dirty method to do this and this is
+    # for visiualization only.
+
     if isinstance(stream, Stream):
         stream_list = [stream]
     else:
@@ -592,7 +606,11 @@ def _stream_segmentation_impl(chi: np.ndarray, elev: np.ndarray, filter_window_l
     from scipy.signal import savgol_filter
     from TVDCondat2013 import TVD
 
-    elev_smooth = savgol_filter(elev, window_length=filter_window_length, polyorder=2)
+    # polyorder must be less than window_length for savgol_filter
+    polyorder = 2
+    if polyorder >= filter_window_length:
+        polyorder = filter_window_length-1
+    elev_smooth = savgol_filter(elev, window_length=filter_window_length, polyorder=polyorder)
     ksn = np.gradient(elev_smooth, chi)
     ksn[ksn < 0] = 0
 
