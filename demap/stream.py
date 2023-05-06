@@ -54,6 +54,15 @@ class _StreamBase:
     def xy_to_latlon(self, x, y):
         return xy_to_latlon(x, y, self.dataset.attrs['crs'])
 
+    def xy(self):
+        x, y = self.rowcol_to_xy(self.dataset['rows'].data, self.dataset['cols'].data)
+        return x, y
+    
+    def latlon(self):
+        x, y = self.rowcol_to_xy(self.dataset['rows'].data, self.dataset['cols'].data)
+        lat, lon = self.xy_to_latlon(x, y)
+        return lat, lon
+
     def dx(self):
         return np.abs(self.dataset.attrs['transform'][0])
 
