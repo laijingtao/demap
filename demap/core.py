@@ -40,6 +40,10 @@ def prepare_dem(dem: GeoGrid, **kwargs):
     if base_level is not None:
         dem.dataarray.data[dem.dataarray.data < base_level] = dem.dataarray.attrs['nodata']
 
+    # It seems that RichDEM does not like positive nodata value
+    dem.dataarray.data[dem.dataarray.data == dem.dataarray.attrs['nodata']] = -32768
+    dem.dataarray.attrs['nodata'] = -32768
+
     dem_filled = fill_depression(dem)
 
     return dem_filled
