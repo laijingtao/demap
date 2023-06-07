@@ -47,15 +47,16 @@ def valley_xsec_at_xy(grid: GeoGrid, stream: Stream, x, y, length, **kwargs):
     else:
         swath = grid.swath_profile(x1, y1, x2, y2, swath_width=swath_width)
 
-    return 
+    return swath
 
 
 def xsec_along_valley(grid: GeoGrid, stream: Stream, length, spacing, **kwargs):
 
-    dist_up = stream.dist_up
+    dist_up = stream.dataset['distance_upstream'].data
+    ordered_nodes = stream._ordered_nodes()
 
     anchor_points_list = []
-    row, col = stream.ordered_nodes[0]
+    row, col = ordered_nodes[0]
     x, y = stream.rowcol_to_xy(row, col)
     swath = valley_xsec_at_xy(grid, stream, x, y, length, **kwargs)
     anchor_points_list.append([x, y])
@@ -64,9 +65,9 @@ def xsec_along_valley(grid: GeoGrid, stream: Stream, length, spacing, **kwargs):
 
     prev_k = 0
     k = 1
-    while k < len(stream.ordered_nodes):
+    while k < len(ordered_nodes):
         if np.abs(dist_up[k] - dist_up[prev_k]) > spacing:
-            row, col = stream.ordered_nodes[k]
+            row, col = ordered_nodes[k]
             x, y = stream.rowcol_to_xy(row, col)
             swath = valley_xsec_at_xy(grid, stream, x, y, length, **kwargs)
             swath_list.append(swath)
