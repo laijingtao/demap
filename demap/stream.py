@@ -556,24 +556,22 @@ class StreamNetwork(_StreamBase):
 # TODO: this is not compatible with new StreamNetwork, fix later
 def merge_stream_network(network1: StreamNetwork, network2: StreamNetwork):
 
-    ordered_nodes = np.append(network1.ordered_nodes, network2.ordered_nodes, axis=0)
+    rows = np.append(network1.dataset['rows'], network2.dataset['rows'], axis=0)
+    cols = np.append(network1.dataset['cols'], network2.dataset['cols'], axis=0)
 
-    downstream = np.append(network1.downstream, network2.downstream)
-    upstream = np.append(network1.upstream, network2.upstream, axis=0)
+    downstream = np.append(network1.dataset['downstream'], network2.dataset['downstream'])
 
-    n1 = len(network1.ordered_nodes)
+    n1 = len(network1.dataset['downstream'])
 
     downstream[n1:][downstream[n1:] >= 0] += n1
-    upstream[n1:, 1:][upstream[n1:, 1:] >= 0] += n1
 
-    merged = StreamNetwork(ordered_nodes=ordered_nodes,
+    merged = StreamNetwork(rows=rows, cols=cols,
                            downstream=downstream,
-                           upstream=upstream,
-                           crs=copy.deepcopy(network1.crs),
-                           transform=copy.deepcopy(network1.transform))
+                           crs=copy.deepcopy(network1.dataset.attrs['crs']),
+                           transform=copy.deepcopy(network1.dataset.attrs['transform']))
 
-    for key in merged.attrs:
-        merged.attrs[key] = np.append(network1.attrs[key], network2.attrs[key], axis=0)
+    #for key in merged.attrs:
+    #    merged.attrs[key] = np.append(network1.attrs[key], network2.attrs[key], axis=0)
 
     return merged
 
