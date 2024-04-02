@@ -1,6 +1,6 @@
 import copy
 import numpy as np
-import numpy.typing as npt
+from typing import Union
 
 from .geogrid import GeoGrid
 from .stream import Stream, StreamNetwork
@@ -175,5 +175,89 @@ def calculate_ksn(dem: GeoGrid, drainage_area: GeoGrid,
     ksn = slope * A_theta
 
     stream_network.dataset['ksn'] = (('flow_order'), ksn)
+
+    return stream_network
+
+
+def calculate_channel_slope(stream_network: Union[StreamNetwork, Stream], elev_window=20, **kwargs):
+    if is_verbose():
+        print("Calculating channel slope ...")
+
+    if 'elev' in stream_network.dataset:
+        elev = stream_network.dataset['elev'].data
+    elif 'elevation' in stream_network.dataset:
+        elev = stream_network.dataset['elevation'].data
+    elif 'dem' in kwargs:
+        elev = stream_network.get_value(kwargs['dem'])
+    else:
+        raise ValueError("Missing elevation information. Pass a dem or add elevation info to the stream network")
+    
+    flow_order = stream_network.dataset['flow_order'].data
+
+    if isinstance(stream_network, StreamNetwork):
+        downstream = stream_network.dataset['downstream'].data
+    elif isinstance(stream_network, Stream):
+        downstream = flow_order + 1
+        downstream[-1] = -1
+    
+
+    '''
+    downstream_elev_drop = np.zeros_like(downstream)
+
+    for k in flow_order:
+        if downstream[k] != -1:
+            down_k = downstream[k]
+            while downstream[down_k] != -1 and elev[k]-elev[downstream[down_k]] < elev_window/2:
+                down_k = downstream[down_k]
+            downstream_elev_drop[k] = down_k
+        else:
+            downstream_elev_drop[k] = -1
+    '''
+    downstream_elev_drop = downstream.copy()
+
+    domain, = np.where(downstream_elev_drop > 0)
+    while len(domain) > 0:
+        domain, = np.where(
+            np.logical_and(
+                downstream_elev_drop > 0,
+                np.logical_and(
+                    downstream[downstream_elev_drop] > 0,
+                    elev[flow_order] - elev[downstream[downstream_elev_drop]] < elev_window/2,
+                ) 
+            )
+        )
+
+        downstream_elev_drop[domain] = downstream[downstream_elev_drop[domain]]
+
+    donor_num = np.zeros(len(flow_order), dtype=int) # pseudo drainage area
+    for k in flow_order:
+        if downstream[k] > -1:
+            donor_num[downstream[k]] += donor_num[k]
+
+    dist = stream_network.dataset['distance_upstream'].data
+
+    elev_down = elev - elev[downstream_elev_drop]
+    elev_down[downstream_elev_drop < 0] = 0
+    dist_down = dist - dist[downstream_elev_drop]
+    dist_down[downstream_elev_drop < 0] = 0
+
+    elev_up = np.zeros_like(elev)
+    dist_up = np.zeros_like(dist)
+    count_up = np.zeros(len(elev_up), dtype=int)
+    for k in flow_order:
+        down_k = downstream[k]
+        if down_k > -1:
+            if count_up[down_k] == 0:
+                elev_up[down_k] = elev[k] - elev[down_k]
+                dist_up[down_k] = dist[k] - dist[down_k]
+                count_up[down_k] = donor_num[k]
+            elif donor_num[k] > count_up[down_k]:
+                elev_up[down_k] = elev[k] - elev[down_k]
+                dist_up[down_k] = dist[k] - dist[down_k]
+                count_up[down_k] = donor_num[k]
+
+    slope = (elev_down + elev_up)/(dist_down + dist_up)
+
+    stream_network.dataset['slope'] = (('flow_order'), slope)
 
     return stream_network

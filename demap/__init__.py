@@ -10,7 +10,7 @@ from .core import (process_dem,
                    build_stream_network,
                    extract_catchment_mask,
                    extract_catchment_boundary)
-from .chi import calculate_chi, calculate_chi_grid, calculate_ksn
+from .chi import calculate_chi, calculate_chi_grid, calculate_ksn, calculate_channel_slope
 from .valley import valley_xsec_at_xy, xsec_along_valley
 from .helpers import rowcol_to_xy, xy_to_rowcol, latlon_to_xy, xy_to_latlon
 from .plot import show_grid, show_stream, show_swath_loc, get_hillshade
