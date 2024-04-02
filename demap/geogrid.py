@@ -10,9 +10,24 @@ from .swath import Swath
 
 
 class GeoGrid:
-    """A grid with georeferencing and metadata"""
 
     def __init__(self, data, crs, transform, metadata, nodata=None):
+        """A 2D grid with georeferencing and metadata
+
+        Parameters
+        ----------
+        data : array-like
+            Data to be stored in the GeoGrid
+        crs : CRS
+            Coordinate Reference Systems
+        transform : Affine
+            affine transformation matrix
+        metadata : dict
+            Metadata for the GeoGrid
+        nodata : 
+            Nodata value, by default None
+        """
+
         nrows, ncols = data.shape[0:2]
 
         self.dataarray = xr.DataArray(
@@ -51,6 +66,14 @@ class GeoGrid:
         return f'GeoGrid\n{self.dataarray.__repr__()}'
 
     def to_rdarray(self):
+        """Convert the `GeoGrid` to `richdem.rdarray`
+
+        Returns
+        -------
+        richdem.rdarray
+            Output array
+        """
+
         if self._valid_for_richdem():
             out_rd = richdem.rdarray(self.dataarray.data, no_data=self.dataarray.attrs['nodata'])
             out_rd.geotransform = self.dataarray.attrs['transform'].to_gdal()
@@ -58,6 +81,12 @@ class GeoGrid:
             return out_rd
 
     def _valid_for_richdem(self):
+        """Check if the `GeoGrid` is compatible with `richdem.rdarray`
+
+        Returns
+        -------
+        bool
+        """
         if (self.dataarray.attrs['nodata'] is None) or np.isnan(self.dataarray.attrs['nodata']):
             raise ValueError("Invalid nodata value for richdem: {}".format(self.dataarray.attrs['nodata']))
         if np.sum(np.isnan(self.dataarray.data)) > 0:
@@ -66,15 +95,71 @@ class GeoGrid:
         return True
 
     def rowcol_to_xy(self, row, col):
+        """Convert row, col to x, y
+
+        Parameters
+        ----------
+        row : int or array-like
+            row
+        col : int or array-like
+            col
+
+        Returns
+        -------
+        tuple
+            x, y coordinates
+        """
         return rowcol_to_xy(row, col, self.dataarray.attrs['transform'])
 
     def xy_to_rowcol(self, x, y):
+        """Convert x, y to row, col
+
+        Parameters
+        ----------
+        x : float or array-like
+            x coordinates
+        y : float or array-like
+            y coordinates
+
+        Returns
+        -------
+        tuple
+            row, col
+        """
         return xy_to_rowcol(x, y, self.dataarray.attrs['transform'])
 
     def latlon_to_xy(self, lat, lon):
+        """Convert latitude, longitude to x, y
+
+        Parameters
+        ----------
+        lat : float or array-like
+            latitude
+        lon : float or array-like
+            longitude
+
+        Returns
+        -------
+        tuple
+            x, y
+        """
         return latlon_to_xy(lat, lon, self.dataarray.attrs['crs'])
 
     def xy_to_latlon(self, x, y):
+        """Convert x, y to latitude, longitude
+
+        Parameters
+        ----------
+        x : float or array-like
+            x coordinates
+        y : float or array-like
+            y coordinates
+
+        Returns
+        -------
+        tuple
+            latitude, longitude
+        """
         return xy_to_latlon(x, y, self.dataarray.attrs['crs'])
 
     def dx(self):
