@@ -108,3 +108,21 @@ def load_pickle(filename):
     with open(filename, 'rb') as in_file:
         res = pickle.load(in_file)
     return res
+
+
+def save_as_tiff(grid, filename):
+    import rasterio as rio
+
+    with rio.open(
+        filename,
+        'w',
+        driver='GTiff',
+        height=grid.dataarray.shape[0],
+        width=grid.dataarray.shape[1],
+        count=1,
+        dtype=grid.dataarray.dtype,
+        crs=grid.dataarray.attrs['crs'],
+        transform=grid.dataarray.attrs['transform'],
+    ) as dst:
+        dst.write(grid.dataarray.data, 1)
+        
