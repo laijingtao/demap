@@ -431,6 +431,39 @@ def _to_rdarray(grid_data: np.ndarray, nodata, transform):
     return out_rd
 
 
+def _fill_depression(dem: np.ndarray, nodata, transform):
+    """Fill dipression using richDEM
+
+    There are two ways to do this (see below) and Barnes2014 is the default.
+
+    Epsilon filling will give a non-flat filled area:
+    https://richdem.readthedocs.io/en/latest/depression_filling.html#epsilon-filling
+
+    Barnes2014 also gives a not-flat filled area,
+    and it produces more pleasing view of stream network
+    https://richdem.readthedocs.io/en/latest/flat_resolution.html#
+    """
+    import richdem
+
+    dem_rd = _to_rdarray(dem, nodata, transform)
+    # richdem's filldepression does not work properly with int
+    dem_rd = dem_rd.astype(dtype=float)
+
+    print("RichDEM fill depression output:")
+    # One way to do this is to use simple epsilon filling.
+    #dem_rd_filled = richdem.FillDepressions(dem_rd, epsilon=True, in_place=False)
+
+    # Use Barnes2014 filling method to produce more pleasing view of stream network
+    # `Cells inappropriately raised above surrounding terrain = 0`
+    # means 0 cells triggered this warning.
+    dem_rd_filled = richdem.FillDepressions(dem_rd, epsilon=False, in_place=False)
+    dem_rd_filled = richdem.ResolveFlats(dem_rd_filled, in_place=False)
+
+    dem_rd_filled = np.array(dem_rd_filled)
+
+    return dem_rd_filled
+
+
 def _flow_dir_from_richdem(dem: np.ndarray, nodata, transform):
     """
     Return:
@@ -472,3 +505,136 @@ def _flow_dir_from_richdem(dem: np.ndarray, nodata, transform):
     flow_dir_data = flow_dir_data.astype(np.int8)
 
     return flow_dir_data
+
+
+@_speed_up
+def _accumulate_flow_impl(flow_dir: np.ndarray, ordered_nodes: np.ndarray, cellsize):
+    di = [0, 0, -1, -1, -1, 0, 1, 1, 1]
+    dj = [0, 1, 1, 0, -1, -1, -1, 0, 1]
+
+    ni, nj = flow_dir.shape
+    drainage_area = np.ones((ni, nj)) * cellsize
+    for k in range(len(ordered_nodes)):
+        i, j = ordered_nodes[k]
+        
+        if flow_dir[i, j] == 0:
+            # sink, skip
+            continue
+
+        r_i = i + di[flow_dir[i, j]]
+        r_j = j + dj[flow_dir[i, j]]
+        if r_i >= 0 and r_i < ni and r_j >= 0 and r_j < nj:
+            drainage_area[r_i, r_j] += drainage_area[i, j]
+        else:
+            # receiver is out the bound, skip
+            continue
+
+    return drainage_area
+
+
+@_speed_up
+def _is_head(flow_dir: np.ndarray):
+    """
+    Demap's flow direction coding:
+    |4|3|2|
+    |5|0|1|
+    |6|7|8|
+    """
+    di = [0, 0, -1, -1, -1, 0, 1, 1, 1]
+    dj = [0, 1, 1, 0, -1, -1, -1, 0, 1]
+
+    ni, nj = flow_dir.shape
+
+    is_head = np.ones((ni, nj), dtype=np.bool_)
+    for i in range(ni):
+        for j in range(nj):
+            k = flow_dir[i, j]
+            if k == -1:  # nodata
+                is_head[i, j] = False
+            elif k != 0:
+                r_i = i + di[k]
+                r_j = j + dj[k]
+                if r_i >= 0 and r_i < ni and r_j >= 0 and r_j < nj:
+                    is_head[r_i, r_j] = False
+
+    return is_head
+
+
+@_speed_up
+def _add_to_stack(i, j,
+                  flow_dir: np.ndarray,
+                  ordered_nodes: np.ndarray,
+                  stack_size,
+                  in_list: np.ndarray):
+    
+    """
+    Demap's flow direction coding:
+    |4|3|2|
+    |5|0|1|
+    |6|7|8|
+    """
+    if flow_dir[i, j] == -1:
+        # reach nodata
+        # Theoraticall, this should never occur, because nodata are excluded
+        # from the whole network.
+        return ordered_nodes, stack_size
+    
+    if in_list[i, j]:
+        return ordered_nodes, stack_size
+
+    in_list[i, j] = True
+
+    if flow_dir[i, j] != 0:
+        di = [0, 0, -1, -1, -1, 0, 1, 1, 1]
+        dj = [0, 1, 1, 0, -1, -1, -1, 0, 1]
+
+        ni, nj = flow_dir.shape
+
+        r_i = i + di[flow_dir[i, j]]
+        r_j = j + dj[flow_dir[i, j]]
+        if r_i >= 0 and r_i < ni and r_j >= 0 and r_j < nj:
+            ordered_nodes, stack_size = _add_to_stack(r_i, r_j,
+                                                    flow_dir, ordered_nodes,
+                                                    stack_size, in_list)
+
+    ordered_nodes[stack_size, 0] = i
+    ordered_nodes[stack_size, 1] = j
+    stack_size += 1
+    
+
+    return ordered_nodes, stack_size
+
+
+@_speed_up
+def _build_hydro_order_impl(flow_dir: np.ndarray):
+    """Implementation of build_hydro_order
+    
+    Demap's flow direction coding:
+    |4|3|2|
+    |5|0|1|
+    |6|7|8|
+
+    """
+
+    ni, nj = flow_dir.shape
+
+    is_head = _is_head(flow_dir)
+
+    in_list = np.zeros((ni, nj), dtype=np.bool_)
+    stack_size = 0
+    ordered_nodes = np.zeros((ni*nj, 2), dtype=np.int32)
+    for i in range(ni):
+        for j in range(nj):
+            if is_head[i, j]:
+                ordered_nodes, stack_size = _add_to_stack(i, j,
+                                                          flow_dir, ordered_nodes,
+                                                          stack_size, in_list)
+
+    ordered_nodes = ordered_nodes[:stack_size]
+
+    # currently ordered_nodes is downstream-to-upstream,
+    # we want to reverse it to upstream-to-downstream because it's more intuitive.
+    ordered_nodes = ordered_nodes[::-1]
+    return ordered_nodes
+
+
