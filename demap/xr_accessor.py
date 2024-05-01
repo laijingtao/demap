@@ -234,6 +234,8 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
 
         ordered_nodes = _build_hydro_order_impl(flow_dir_data)
 
+        n_nodes = len(ordered_nodes)
+
         rows = ordered_nodes[:, 0]
         cols = ordered_nodes[:, 1]
 
@@ -252,28 +254,43 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
         rcv_rows = rows + di[flow_dir_list]
         rcv_cols = cols + dj[flow_dir_list]
 
-        index_list = self._index_in_ordered_array(rows, cols, ordered_nodes)
-        rcv_index_list = self._index_in_ordered_array(rcv_rows, rcv_cols, ordered_nodes)
+        # fix if rcv_row, rcv_col is nodata
+        rcv_rows = np.where(flow_dir_data[rcv_rows, rcv_cols] >= 0, rcv_rows, rows)
+        rcv_cols = np.where(flow_dir_data[rcv_rows, rcv_cols] >= 0, rcv_cols, cols)
+
+        index_hash = {}
+        for k in range(n_nodes):
+            row, col = rows[k], cols[k]
+            index_hash['{}_{}'.format(int(row), int(col))] = k
+
+        index_list = np.arange(n_nodes)
+        rcv_index_list = np.array([index_hash['{}_{}'.format(int(rcv_rows[k]), int(rcv_cols[k]))] for k in range(n_nodes)])
         
-        downstream = -np.ones(len(ordered_nodes), dtype=np.int32)
+        downstream = -np.ones(n_nodes, dtype=np.int32)
         downstream[index_list] = np.where(index_list != rcv_index_list, rcv_index_list, -1)
+
+        stream_x, stream_y = self.rowcol_to_xy(rows, cols)
+        distance_upstream = _calculate_dist_up_impl(stream_x, stream_y, downstream)
+
+        #ordered_nodes, downstream = _split_stream_network(ordered_nodes, downstream, distance_upstream)
 
 
         stream_network_ds = xr.Dataset(
             coords={
-                "hydro_order": np.arange(len(rows), dtype=np.int32),
+                "hydro_order": np.arange(n_nodes, dtype=np.int32),
             },
         )
         stream_network_ds["rows"] = (["hydro_order"], rows)
         stream_network_ds["cols"] = (["hydro_order"], cols)
         stream_network_ds['downstream'] = (['hydro_order'], downstream)
+        stream_network_ds['distance_upstream'] = (['hydro_order'], distance_upstream)
         stream_network_ds.attrs['crs'] = self.crs
         stream_network_ds.attrs['transform'] = self.transform
 
         return stream_network_ds
     
-    '''
-    def split_stream_network(self, ):
+    
+    def split_stream_network(self, mode='tributary'):
         if mode not in ['all', 'tributary']:
             raise ValueError("Unknow mode, accepted modes are: \'all\', \'tributary\'")
 
@@ -282,63 +299,51 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
         else:
             mode_flag = 2
 
-        if var_to_copy is not None:
-            if isinstance(var_to_copy, str):
-                var_to_copy = [var_to_copy]
+        rows, cols = self.stream_coords_rowcol
+        ordered_nodes = np.vstack([rows, cols]).T
+        downstream = np.asarray(self._xrobj['downstream'])
+        distance_upstream = np.asarray(self._xrobj['distance_upstream'])
 
-        rows = self.dataset['rows'].data
-        cols = self.dataset['cols'].data
-        n_nodes = len(rows)
-        downstream = self.dataset['downstream'].data
-        in_streams = np.zeros(n_nodes, dtype=bool)
+        splitted_stream_idx = _split_stream_network(ordered_nodes, downstream, distance_upstream, mode_flag)
 
-        is_head = np.ones(n_nodes, dtype=bool)
-        for k in range(n_nodes):
-            if downstream[k] > -1:
-                is_head[downstream[k]] = False
-        head_nodes_idx = np.arange(n_nodes)[is_head == True]
-        sort_idx = np.argsort(self.dataset['distance_upstream'].data[head_nodes_idx])[::-1]
-        head_nodes_idx = head_nodes_idx[sort_idx]
-
+        stream_end_idx = np.where(splitted_stream_idx == -1)[0]
         streams = []
-        for head in head_nodes_idx:
-            stream_idx = [head]
+        for k in range(len(stream_end_idx)):
+            if k == 0:
+                stream_start = 0
+            else:
+                stream_start = stream_end_idx[k-1]+1
 
-            # build streams_idx
-            k = head
-            while (downstream[k] != -1) and (not in_streams[downstream[k]]):
-                k = downstream[k]
-                stream_idx.append(k)
-                if mode_flag == 1:
-                    in_streams[k] = True
+            stream_end = stream_end_idx[k]
 
-            if mode_flag == 1 and downstream[k] != -1:
-                # also add juction node
-                stream_idx.append(downstream[k])
+            stream_idx = splitted_stream_idx[stream_start:stream_end]
+            sub_ordered_nodes = ordered_nodes[stream_idx]
+            sub_distance_upstream = distance_upstream[stream_idx]
+            
+            stream_ds = xr.Dataset(
+                coords={
+                    "hydro_order": np.arange(len(sub_ordered_nodes), dtype=np.int32),
+                },
+            )
+            stream_ds["rows"] = (["hydro_order"], sub_ordered_nodes[:, 0])
+            stream_ds["cols"] = (["hydro_order"], sub_ordered_nodes[:, 1])
+            stream_ds['distance_upstream'] = (['hydro_order'], sub_distance_upstream)
+            stream_ds.attrs['crs'] = self.crs
+            stream_ds.attrs['transform'] = self.transform
 
-            new_stream = Stream(rows=rows[stream_idx], cols=cols[stream_idx],
-                                crs=self.dataset.attrs['crs'],
-                                transform=self.dataset.attrs['transform'])
+            streams.append(stream_ds)
 
-            # make sure the dist_up is relative to outlet of the stream network
-            new_stream.dataset['distance_upstream'] += self.dataset['distance_upstream'][stream_idx[-1]]
-
-            if var_to_copy is not None:
-                for var in var_to_copy:
-                    val = self.dataset[var].data[stream_idx]
-                    new_stream.dataset[var] = (('flow_order'), val)
-
-            streams.append(new_stream)
-
-        streams = np.array(streams)
-        if mode_flag == 1:
-            # sort by length again for tributary mode, note it's the length of tributary stream
-            length_list = np.array([st.length() for st in streams])
-            sort_idx = np.argsort(length_list)[::-1]
-            streams = streams[sort_idx]
-
+        #streams = np.array(streams)
+        
+        #if mode_flag == 1:
+        # sort by length again for tributary mode, note it's the length of tributary stream
+        length_list = np.array([np.max(st['distance_upstream'])-np.min(st['distance_upstream']) for st in streams])
+        sort_idx = np.argsort(length_list)[::-1]
+        streams = [streams[i] for i in sort_idx]
+        
         return streams
-    '''
+    
+
     
 @_speed_up
 def _index_in_ordered_array_impl(row, col, ordered_nodes):
@@ -348,6 +353,67 @@ def _index_in_ordered_array_impl(row, col, ordered_nodes):
         index_list[i] = np.where(np.logical_and(ordered_nodes[:, 0] == row[i], ordered_nodes[:, 1] == col[i]))[0].astype(np.int32)[0]
 
     return index_list
+
+
+@_speed_up
+def _calculate_dist_up_impl(x: np.ndarray, y: np.ndarray, downstream: np.ndarray):
+    dist_up = np.zeros_like(x)
+
+    for k in range(len(x)-1, -1, -1):
+        if downstream[k] > -1:
+            d_k = downstream[k]
+            d_dist = np.sqrt(np.power(x[k] - x[d_k], 2) + np.power(y[k] - y[d_k], 2))
+            dist_up[k] = dist_up[d_k] + d_dist
+
+    return dist_up
+
+@_speed_up
+def _split_stream_network(ordered_nodes, downstream, distance_upstream, mode_flag):
+    n_nodes = len(ordered_nodes)
+    is_head = np.ones(n_nodes, dtype=np.bool_)
+    for k in range(n_nodes):
+        if downstream[k] > -1:
+            is_head[downstream[k]] = False
+    head_nodes_idx = np.where(is_head == True)[0]
+
+    sort_idx = np.argsort(distance_upstream[head_nodes_idx])[::-1]
+    head_nodes_idx = head_nodes_idx[sort_idx]
+
+    if mode_flag == 1:
+        new_size = n_nodes*2
+    else:
+        new_size = len(head_nodes_idx) * n_nodes
+    
+    splitted_stream_idx = np.zeros(new_size, dtype=np.int32)
+
+    in_streams = np.zeros(n_nodes, dtype=np.bool_)
+    length = -1
+    for head in head_nodes_idx:
+        k = head
+
+        length = length + 1
+        splitted_stream_idx[length] = k
+        
+        while (downstream[k] != -1) and (not in_streams[downstream[k]]):
+            k = downstream[k]
+            
+            length = length + 1
+            splitted_stream_idx[length] = k
+            
+            if mode_flag == 1:
+                in_streams[k] = True
+
+        if mode_flag == 1 and downstream[k] != -1:
+            # also add juction node
+            length = length + 1
+            splitted_stream_idx[length] = downstream[k]
+        
+        length = length + 1 
+        splitted_stream_idx[length] = -1 # splitter
+
+    splitted_stream_idx = splitted_stream_idx[:length+1]
+
+    return splitted_stream_idx
 
 
 def _to_rdarray(grid_data: np.ndarray, nodata, transform):
