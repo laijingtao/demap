@@ -4,17 +4,14 @@ import rioxarray
 from typing import Union
 
 from .helpers import rowcol_to_xy, xy_to_rowcol, latlon_to_xy, xy_to_latlon
-from ._impl import _build_hydro_order_impl, _accumulate_flow_impl
 from ._base import _speed_up
 
-@xr.register_dataset_accessor("demap")
-class DemapAccessor:
-    _ds: xr.Dataset
+class _XarrayAccessorBase:
 
-    def __init__(self, ds):
-        self._ds = ds
-        self._crs = self._ds.rio.crs
-        self._transform = self._ds.rio.transform()
+    def __init__(self, xrobj):
+        self._xrobj = xrobj
+        self._crs = self._xrobj.rio.crs
+        self._transform = self._xrobj.rio.transform()
     
     @property
     def crs(self):
@@ -44,19 +41,20 @@ class DemapAccessor:
     def xy_to_latlon(self, x, y):
         return xy_to_latlon(x, y, self.crs)
 
-    @property
-    def xy(self):
-        return np.asarray(self._ds['x']), np.asarray(self._ds['y'])
-    
     '''
     @property
+    def xy(self):
+        return np.asarray(self._xrobj['x']), np.asarray(self._xrobj['y'])
+    
+    
+    @property
     def rowcol(self):
-        rows, cols = self.xy_to_rowcol(np.asarray(self._ds['x']), np.asarray(self._ds['y']))
+        rows, cols = self.xy_to_rowcol(np.asarray(self._xrobj['x']), np.asarray(self._xrobj['y']))
         return rows, cols
     
     @property
     def latlon(self):
-        lat, lon = self.xy_to_latlon(np.asarray(self._ds['x']), np.asarray(self._ds['y']))
+        lat, lon = self.xy_to_latlon(np.asarray(self._xrobj['x']), np.asarray(self._xrobj['y']))
         return lat, lon
     '''
 
@@ -67,6 +65,43 @@ class DemapAccessor:
     @property
     def dy(self):
         return np.abs(self.transform[4])
+
+
+@xr.register_dataarray_accessor("demap")
+class DemapDataarrayAccessor(_XarrayAccessorBase):
+
+    def __init__(self, xrobj):
+        super().__init__(xrobj)
+        self._nodata = self._xrobj.rio.nodata
+
+    @property
+    def nodata(self):
+        return self._nodata
+    
+    @nodata.setter
+    def nodata(self, value):
+        self._nodata = value
+
+
+@xr.register_dataset_accessor("demap")
+class DemapDatasetAccessor(_XarrayAccessorBase):
+    
+    @property
+    def stream_coords_rowcol(self):
+        return np.asarray(self._xrobj['rows']), np.asarray(self._xrobj['cols'])
+    
+    @property
+    def stream_coords_xy(self):
+        rows, cols = np.asarray(self._xrobj['rows']), np.asarray(self._xrobj['cols'])
+        x, y = self.rowcol_to_xy(rows, cols)
+        return x, y
+    
+    @property
+    def stream_coords_latlon(self):
+        rows, cols = np.asarray(self._xrobj['rows']), np.asarray(self._xrobj['cols'])
+        x, y = self.rowcol_to_xy(rows, cols)
+        lat, lon = self.xy_to_latlon(x, y)
+        return lat, lon
     
     def _get_var_data_for_func(self, var_name, local_dict):
 
@@ -77,8 +112,8 @@ class DemapAccessor:
 
         var_data_list = []
         for var in var_name_list:
-            if var in self._ds:
-                var_data = self._ds[var].to_numpy()
+            if var in self._xrobj:
+                var_data = self._xrobj[var].to_numpy()
             elif local_dict[var] is not None:
                 var_data = np.asarray(local_dict[var])
             else:
@@ -94,13 +129,15 @@ class DemapAccessor:
 
     def get_flow_direction(self):
 
-        dem = self._ds['dem']
+        dem = self._xrobj['dem']
 
-        flow_dir_data = _flow_dir_from_richdem(np.asarray(dem), dem.rio.nodata, self.transform)
+        dem_cond = _fill_depression(np.asarray(dem), dem.rio.nodata, self.transform)
+        flow_dir_data = _flow_dir_from_richdem(dem_cond, dem.rio.nodata, self.transform)
 
-        self._ds['flow_dir'] = (('y', 'x'), flow_dir_data)
+        self._xrobj['dem_cond'] = (('y', 'x'), dem_cond)
+        self._xrobj['flow_dir'] = (('y', 'x'), flow_dir_data)
 
-        return self._ds['flow_dir']
+        return self._xrobj['flow_dir']
 
     
     def build_hydro_order(self, flow_dir: Union[np.ndarray, xr.DataArray] = None):
@@ -120,11 +157,16 @@ class DemapAccessor:
         """
 
         flow_dir_data = self._get_var_data_for_func('flow_dir', locals())
+
+        import sys
+        ni, nj = flow_dir_data.shape
+        sys.setrecursionlimit(ni*nj)
+
         ordered_nodes = _build_hydro_order_impl(flow_dir_data)
 
-        self._ds['ordered_nodes'] = (('hydro_order', 'node_coords'), ordered_nodes)
+        self._xrobj['ordered_nodes'] = (('hydro_order', 'node_coords'), ordered_nodes)
 
-        return self._ds['ordered_nodes']
+        return self._xrobj['ordered_nodes']
     
     
     def accumulate_flow(self,
@@ -138,17 +180,39 @@ class DemapAccessor:
         cellsize = self.dx * self.dy
         drainage_area_data = _accumulate_flow_impl(flow_dir_data, ordered_nodes_data, cellsize)
 
-        self._ds['drainage_area'] = (('y', 'x'), drainage_area_data)
+        self._xrobj['drainage_area'] = (('y', 'x'), drainage_area_data)
 
-        return self._ds['drainage_area']
+        return self._xrobj['drainage_area']
+    
+    def _build_index_hash(self, ordered_nodes: np.ndarray):
+        index_hash = {}
+
+        rows = ordered_nodes[:, 0]
+        cols = ordered_nodes[:, 1]
+
+        for k in range(len(rows)):
+            row, col = rows[k], cols[k]
+            index_hash['{}_{}'.format(int(row), int(col))] = k
+
+        self._index_hash = index_hash
+
+        return self._index_hash
     
     def _index_in_ordered_array(self, row, col, ordered_nodes):
 
         if not hasattr(row, '__len__'):
             row = np.asarray([row])
             col = np.asarray([col])
+
+        try:
+            index_hash = getattr(self, '_index_hash')
+            if index_hash is None:
+                index_hash = self._build_index_hash(ordered_nodes)
+        except AttributeError:
+            index_hash = self._build_index_hash(ordered_nodes)
         
-        index_list = _index_in_ordered_array_impl(row, col, ordered_nodes)
+        #index_list = _index_in_ordered_array_impl(row, col, ordered_nodes)
+        index_list = [index_hash['{}_{}'.format(int(row[k]), int(col[k]))] for k in range(len(row))]
 
         if len(index_list) == 1:
             index_list = index_list[0]
