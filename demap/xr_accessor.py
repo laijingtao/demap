@@ -327,6 +327,7 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
             )
             stream_ds["rows"] = (["hydro_order"], sub_ordered_nodes[:, 0])
             stream_ds["cols"] = (["hydro_order"], sub_ordered_nodes[:, 1])
+            # TODO: maybe also add downstream for streams
             stream_ds['distance_upstream'] = (['hydro_order'], sub_distance_upstream)
             stream_ds.attrs['crs'] = self.crs
             stream_ds.attrs['transform'] = self.transform
@@ -344,6 +345,112 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
         return streams
     
 
+    def nearest_to_xy(self, x, y):
+        """
+        Return the stream node nearest to given x, y geographic coordinates.
+        """
+        #row, col = self.xy_to_rowcol(x, y)
+        #d_i = np.abs(self.dataset['rows'].data - row)
+        #d_j = np.abs(self.dataset['cols'].data - col)
+
+        x_list, y_list = self.rowcol_to_xy(np.asarray(self._xrobj['rows']), np.asarray(self._xrobj['cols']))
+        d_x = np.abs(x_list - x)
+        d_y = np.abs(y_list - y)
+
+        dist = np.sqrt(np.power(d_x, 2) + np.power(d_y, 2))
+        k = np.argmin(dist)
+
+        return k
+
+
+    def extract_from_xy(self, x, y, direction='up'):
+        if direction not in ['up', 'down']:
+            raise ValueError("Unknown direction, \'up\' or \'down\'")
+
+        node_idx = self.nearest_to_xy(x, y)
+        if direction == 'up':
+            return self._extract_from_rowcol_up(node_idx)
+        elif direction == 'down':
+            return self._extract_from_rowcol_down(node_idx)
+
+
+    def _extract_from_rowcol_up(self, node_idx):
+        import copy
+
+        rows = np.asarray(self._xrobj['rows'])
+        cols = np.asarray(self._xrobj['cols'])
+        downstream = np.asarray(self._xrobj['downstream'])
+
+        outlet = node_idx
+        in_sub_network = _build_upward_sub_network_mask(outlet, downstream)
+
+        sub_rows = copy.deepcopy(rows[in_sub_network == True])
+        sub_cols = copy.deepcopy(cols[in_sub_network == True])
+        sub_downstream = copy.deepcopy(downstream[in_sub_network == True])
+
+        # update index in sub_downstream
+        new_idx = -np.ones(len(rows))
+        new_idx[in_sub_network == True] = np.arange(len(sub_rows))
+        # new_idx is essentially a function that convert old index to new index
+        sub_downstream[np.where(sub_downstream >= 0)] =\
+            new_idx[sub_downstream[np.where(sub_downstream >= 0)]]
+        
+        sub_network_ds = xr.Dataset(
+                coords={
+                    "hydro_order": np.arange(len(sub_rows), dtype=np.int32),
+                },
+            )
+        sub_network_ds["rows"] = (["hydro_order"], sub_rows)
+        sub_network_ds["cols"] = (["hydro_order"], sub_cols)
+        sub_network_ds['downstream'] = (['hydro_order'], sub_downstream)
+        sub_network_ds['distance_upstream'] = (['hydro_order'], np.asarray(self._xrobj['distance_upstream'])[in_sub_network == True])
+        sub_network_ds.attrs['crs'] = self.crs
+        sub_network_ds.attrs['transform'] = self.transform
+
+        return sub_network_ds
+    
+    
+    def _extract_from_rowcol_down(self, node_idx):
+        import copy
+
+        rows = np.asarray(self._xrobj['rows'])
+        cols = np.asarray(self._xrobj['cols'])
+        downstream = np.asarray(self._xrobj['downstream'])
+        in_sub_network = np.zeros(len(rows), dtype=bool)
+
+        k = node_idx
+        in_sub_network[k] = True
+
+        # go downstream
+        while downstream[k] != -1:
+            k = downstream[k]
+            in_sub_network[k] = True
+
+        sub_rows = copy.deepcopy(rows[in_sub_network == True])
+        sub_cols = copy.deepcopy(cols[in_sub_network == True])
+        sub_downstream = copy.deepcopy(downstream[in_sub_network == True])
+
+        # update index in sub_downstream
+        new_idx = -np.ones(len(rows))
+        new_idx[in_sub_network == True] = np.arange(len(sub_rows))
+        # new_idx is essentially a function that convert old index to new index
+        sub_downstream[np.where(sub_downstream >= 0)] =\
+            new_idx[sub_downstream[np.where(sub_downstream >= 0)]]
+        
+        sub_network_ds = xr.Dataset(
+                coords={
+                    "hydro_order": np.arange(len(sub_rows), dtype=np.int32),
+                },
+            )
+        sub_network_ds["rows"] = (["hydro_order"], sub_rows)
+        sub_network_ds["cols"] = (["hydro_order"], sub_cols)
+        sub_network_ds['downstream'] = (['hydro_order'], sub_downstream)
+        sub_network_ds['distance_upstream'] = (['hydro_order'], np.asarray(self._xrobj['distance_upstream'])[in_sub_network == True])
+        sub_network_ds.attrs['crs'] = self.crs
+        sub_network_ds.attrs['transform'] = self.transform
+
+        return sub_network_ds
+    
     
 @_speed_up
 def _index_in_ordered_array_impl(row, col, ordered_nodes):
@@ -638,3 +745,34 @@ def _build_hydro_order_impl(flow_dir: np.ndarray):
     return ordered_nodes
 
 
+@_speed_up
+def _build_upward_sub_network_mask(outlet, downstream: np.ndarray):
+    n_nodes = len(downstream)
+    in_sub_network = np.zeros(n_nodes, dtype=np.bool_)
+    in_sub_network[outlet] = True
+
+    # find all channel heads
+    is_head = np.ones(n_nodes, dtype=np.bool_)
+    for k in range(n_nodes):
+        if downstream[k] > -1:
+            is_head[downstream[k]] = False
+
+    # check if a chnnel head drains to the target outlet
+    for k in range(n_nodes):
+        if is_head[k]:
+            curr_idx = k
+            while curr_idx < outlet and curr_idx > -1:
+                curr_idx = downstream[curr_idx]
+            if curr_idx == outlet:
+                in_sub_network[k] = True
+
+    # now we have all channel heads that drains to the target outlet,
+    # add all downstream nodes
+    for k in range(n_nodes):
+        if is_head[k] and in_sub_network[k]:
+            curr_idx = k
+            while curr_idx < outlet:
+                in_sub_network[curr_idx] = True
+                curr_idx = downstream[curr_idx]
+
+    return in_sub_network
