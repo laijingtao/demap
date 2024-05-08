@@ -86,23 +86,6 @@ class DemapDataarrayAccessor(_XarrayAccessorBase):
 @xr.register_dataset_accessor("demap")
 class DemapDatasetAccessor(_XarrayAccessorBase):
     
-    @property
-    def stream_coords_rowcol(self):
-        return np.asarray(self._xrobj['rows']), np.asarray(self._xrobj['cols'])
-    
-    @property
-    def stream_coords_xy(self):
-        rows, cols = np.asarray(self._xrobj['rows']), np.asarray(self._xrobj['cols'])
-        x, y = self.rowcol_to_xy(rows, cols)
-        return x, y
-    
-    @property
-    def stream_coords_latlon(self):
-        rows, cols = np.asarray(self._xrobj['rows']), np.asarray(self._xrobj['cols'])
-        x, y = self.rowcol_to_xy(rows, cols)
-        lat, lon = self.xy_to_latlon(x, y)
-        return lat, lon
-    
     def _get_var_data_for_func(self, var_name, local_dict):
 
         if hasattr(var_name, '__len__') and (not isinstance(var_name, str)):
@@ -184,11 +167,32 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
 
         return self._xrobj['drainage_area']
     
-    def _build_index_hash(self, ordered_nodes: np.ndarray):
+
+    #####################################
+    # stream methods below
+    #####################################
+
+    @property
+    def stream_coords_rowcol(self):
+        return np.asarray(self._xrobj['rows']), np.asarray(self._xrobj['cols'])
+    
+    @property
+    def stream_coords_xy(self):
+        rows, cols = np.asarray(self._xrobj['rows']), np.asarray(self._xrobj['cols'])
+        x, y = self.rowcol_to_xy(rows, cols)
+        return x, y
+    
+    @property
+    def stream_coords_latlon(self):
+        rows, cols = np.asarray(self._xrobj['rows']), np.asarray(self._xrobj['cols'])
+        x, y = self.rowcol_to_xy(rows, cols)
+        lat, lon = self.xy_to_latlon(x, y)
+        return lat, lon
+
+    def _build_index_hash(self):
         index_hash = {}
 
-        rows = ordered_nodes[:, 0]
-        cols = ordered_nodes[:, 1]
+        rows, cols = self.stream_coords_rowcol
 
         for k in range(len(rows)):
             row, col = rows[k], cols[k]
@@ -198,7 +202,7 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
 
         return self._index_hash
     
-    def _index_in_ordered_array(self, row, col, ordered_nodes):
+    def _index_in_ordered_array(self, row, col):
 
         if not hasattr(row, '__len__'):
             row = np.asarray([row])
@@ -207,9 +211,9 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
         try:
             index_hash = getattr(self, '_index_hash')
             if index_hash is None:
-                index_hash = self._build_index_hash(ordered_nodes)
+                index_hash = self._build_index_hash()
         except AttributeError:
-            index_hash = self._build_index_hash(ordered_nodes)
+            index_hash = self._build_index_hash()
         
         #index_list = _index_in_ordered_array_impl(row, col, ordered_nodes)
         index_list = [index_hash['{}_{}'.format(int(row[k]), int(col[k]))] for k in range(len(row))]
@@ -344,6 +348,30 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
         
         return streams
     
+    def get_value(self, data_source: Union[xr.DataArray, xr.Dataset, np.ndarray],
+                  var_name=None):
+        if not isinstance(data_source, (xr.DataArray, xr.Dataset, np.ndarray)):
+            raise TypeError("Unsupported data_source type")
+
+        # grid data
+        if isinstance(data_source, (xr.DataArray, np.ndarray)):
+            i_list, j_list = self.stream_coords_rowcol
+            val = np.asarray(np.asarray(data_source)[i_list, j_list])
+
+        # stream data
+        if isinstance(data_source, xr.Dataset):
+            if var_name is None:
+                raise ValueError("var_name cannot be None when getting data from streams")
+            else:
+                source_dataarray = data_source[var_name]
+                i_list, j_list = self.stream_coords_rowcol
+                index_list = data_source.demap._index_in_ordered_array(i_list, j_list)
+                val = source_dataarray.data[index_list]
+
+        if var_name is not None:
+            self._xrobj[var_name] = (('hydro_order'), val)
+
+        return val
 
     def nearest_to_xy(self, x, y):
         """
