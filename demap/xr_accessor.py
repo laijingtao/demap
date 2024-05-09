@@ -110,11 +110,12 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
         return var_data_list
 
 
-    def get_flow_direction(self):
+    def get_flow_direction(self, base_level=-32768):
 
         dem = self._xrobj['dem']
 
         dem_cond = _fill_depression(np.asarray(dem), dem.rio.nodata, self.transform)
+        dem_cond = np.where(dem_cond > base_level, dem_cond, dem.rio.nodata)
         flow_dir_data = _flow_dir_from_richdem(dem_cond, dem.rio.nodata, self.transform)
 
         self._xrobj['dem_cond'] = (('y', 'x'), dem_cond)
@@ -372,6 +373,28 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
             self._xrobj[var_name] = (('hydro_order'), val)
 
         return val
+    
+    def smooth_profile(self, dem: Union[xr.DataArray, np.ndarray]):
+        """Return a smoothed channel profile by removing obstacle
+
+        Parameters
+        ----------
+        dem : Union[xr.DataArray, np.ndarray]
+            DEM
+
+        Returns
+        -------
+        z: array-like
+            smoothed channel profile
+        """
+        z = self.get_value(np.asarray(dem))
+        z = z.astype(float)
+
+        for k in range(1, len(z)):
+            if z[k] > z[k-1]:
+                z[k] = np.nextafter(z[k-1], z[k-1]-1)
+
+        return z
 
     def nearest_to_xy(self, x, y):
         """
@@ -479,6 +502,24 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
 
         return sub_network_ds
     
+    
+    def calculate_chi_ksn(self, dem: Union[xr.DataArray, np.ndarray],
+                          drainage_area: Union[xr.DataArray, np.ndarray],
+                          ref_concavity=0.45, ref_drainage_area=1.0, ksn_elev_window=20):
+        downstream = np.asarray(self._xrobj['downstream'])
+        dist_up = np.asarray(self._xrobj['distance_upstream'])
+        drainage_area = self.get_value(drainage_area)
+
+        chi = _calculate_chi_impl(downstream, dist_up, drainage_area, ref_concavity, ref_drainage_area)
+
+        elev = self.get_value(dem)
+
+        ksn = _calculate_ksn_impl(downstream, chi, elev, elev_window=ksn_elev_window)
+
+        self._xrobj["chi"] = (["hydro_order"], chi)
+        self._xrobj["ksn"] = (["hydro_order"], ksn)
+    
+        return chi, ksn
     
 @_speed_up
 def _index_in_ordered_array_impl(row, col, ordered_nodes):
@@ -804,3 +845,91 @@ def _build_upward_sub_network_mask(outlet, downstream: np.ndarray):
                 curr_idx = downstream[curr_idx]
 
     return in_sub_network
+
+@_speed_up
+def _calculate_chi_impl(downstream: np.ndarray,
+                        dist_up: np.ndarray,
+                        drainage_area: np.ndarray,
+                        ref_concavity, ref_drainage_area):
+    
+    chi = -np.ones_like(downstream, dtype=np.single)
+
+    dchi = np.power(ref_drainage_area/drainage_area, ref_concavity)
+
+    for k in range(len(downstream)-1, -1, -1):
+        d_k = downstream[k]
+        if d_k != -1:
+            d_dist = dist_up[k] - dist_up[d_k]
+            chi[k] = chi[d_k] + (dchi[k] + dchi[d_k])/2 * d_dist
+        else:
+            chi[k] = 0
+
+    return chi
+
+@_speed_up
+def _calculate_ksn_impl(downstream: np.ndarray, chi: np.ndarray, elev: np.ndarray, elev_window):
+    
+    # find the downstream nodes that are within the elevation window
+    # indicated by its index elev_down_k
+    '''
+    elev_down_k = downstream.copy()
+    domain, = np.where(elev_down_k > -1) # nodes that have not found a downstream node
+    while len(domain) > 0:
+        domain, = np.where(
+            np.logical_and(
+                elev_down_k > -1,
+                np.logical_and(
+                    downstream[elev_down_k] > -1,
+                    elev - elev[downstream[elev_down_k]] < elev_window/2,
+                ) 
+            )
+        )
+
+        elev_down_k[domain] = downstream[elev_down_k[domain]]
+    '''
+    # this simple version is faster
+    elev_down_k = -np.ones_like(downstream)
+    for k in range(len(downstream)):
+        if downstream[k] != -1:
+            down_k = downstream[k]
+            while downstream[down_k] != -1 and elev[k]-elev[downstream[down_k]] < elev_window/2:
+                down_k = downstream[down_k]
+            elev_down_k[k] = down_k
+        else:
+            elev_down_k[k] = -1
+    
+    elev_down = elev - elev[elev_down_k]
+    elev_down[elev_down_k < 0] = 0 # elev_down is -1 for nodes that have no downstream node
+    elev_down[elev_down < 0] = 0 # fix reverse slope
+    chi_down = chi - chi[elev_down_k]
+    chi_down[elev_down_k < 0] = 0
+
+    ksn_down = np.zeros(len(chi_down))
+    ksn_down[chi_down > 0] = elev_down[chi_down > 0]/chi_down[chi_down > 0]
+
+    # find upstream ksn
+    # one node may have multiple upstream nodes
+    # in this case, we take the average of the upstream ksn weighted by their
+    # drainage area
+
+    donor_num = np.ones(len(downstream), dtype=np.int32) # pseudo drainage area
+    for k in range(len(downstream)):
+        if downstream[k] > -1:
+            donor_num[downstream[k]] += donor_num[k]
+    
+    ksn_up = np.zeros_like(ksn_down)
+    count_up = np.zeros(len(ksn_up), dtype=np.int32)
+    for k in range(len(downstream)):
+        down_k = downstream[k]
+        if down_k > -1:
+            # for down_k, calculate mean ksn_up weighted by draiange area.
+            # count_up records the total drainage area of upstream nodes that
+            # has been involvded in calculating ksn_up
+            ksn_up[down_k] = (ksn_up[down_k]*count_up[down_k] + ksn_down[k]*donor_num[k])/(count_up[down_k] + donor_num[k])
+            count_up[down_k] += donor_num[k]
+
+    ksn = (ksn_down + ksn_up)/2
+    ksn = np.where(downstream > -1, ksn, ksn_up)
+    ksn = np.where(donor_num > 1, ksn, ksn_down)
+
+    return ksn
