@@ -82,6 +82,17 @@ class DemapDataarrayAccessor(_XarrayAccessorBase):
     def nodata(self, value):
         self._nodata = value
 
+    def plotting_extent(self):
+        """
+        Returns an extent for for matplotlib's imshow (left, right, bottom, top)
+        """
+        rows, cols = self._xrobj.shape[0:2]
+        left, top = self.transform * (0, 0)
+        right, bottom = self.transform * (cols, rows)
+        extent = (left, right, bottom, top)
+
+        return extent
+
 
 @xr.register_dataset_accessor("demap")
 class DemapDatasetAccessor(_XarrayAccessorBase):

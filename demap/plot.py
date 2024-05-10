@@ -1,10 +1,13 @@
 import numpy as np
+import xarray as xr
 from matplotlib.axes import Axes
 from typing import Union
+import rioxarray
 
 from .geogrid import GeoGrid
 from .stream import StreamNetwork, Stream
 from .swath import Swath
+from .xr_accessor import DemapDataarrayAccessor, DemapDatasetAccessor
 
 
 def show_grid(ax: Axes, grid: GeoGrid, **kwargs):
@@ -58,7 +61,7 @@ def show_swath_loc(ax: Axes, swath: Swath, **kwargs):
     return ax
 
 
-def get_hillshade(dem: GeoGrid, altitude=45, azimuth=135):
+def get_hillshade(dem: Union[np.ndarray, xr.DataArray], altitude=45, azimuth=135):
     """Calculate the hillshade of a suface.
 
     Parameters
@@ -78,12 +81,12 @@ def get_hillshade(dem: GeoGrid, altitude=45, azimuth=135):
     -------
     np.ndarray
         Hillshade of the suface.
-        Ranges from -1 to 1, -1 being darkest and 1 being brightest
+        Ranges from 0 to 1, 0 being darkest and 1 being brightest
     """
 
     # https://pro.arcgis.com/en/pro-app/latest/tool-reference/3d-analyst/how-hillshade-works.htm
     
-    if not isinstance(dem, GeoGrid):
+    if not isinstance(dem, Union[np.ndarray, xr.DataArray]):
         raise ValueError("Wrong data type for dem.")
 
     zenith_rad = (90.0 - altitude)/180.0 * np.pi
@@ -94,12 +97,12 @@ def get_hillshade(dem: GeoGrid, altitude=45, azimuth=135):
         
     azimuth_rad = azimuth_math/180.0 * np.pi
 
-    dem_data = dem.dataarray.data
+    dem_data = np.asarray(dem)
     dem_data = dem_data.astype(float)
-    dem_data[dem_data == dem.dataarray.attrs['nodata']] = np.nan
+    dem_data[dem_data == dem.demap.nodata] = np.nan
 
-    dx = dem.dx()
-    dy = dem.dy()
+    dx = dem.demap.dx
+    dy = dem.demap.dy
     
     dzdx = np.zeros(dem_data.shape)
     dzdy = np.zeros(dem_data.shape)
@@ -116,7 +119,9 @@ def get_hillshade(dem: GeoGrid, altitude=45, azimuth=135):
     aspect_rad[np.logical_and(dzdx == 0, dzdy > 0)] = 0.5 * np.pi
     aspect_rad[np.logical_and(dzdx == 0, dzdy < 0)] = 1.5 * np.pi
 
-    hillshade_value = (np.cos(zenith_rad) * np.cos(slope_rad)) + \
-        (np.sin(zenith_rad) * np.sin(slope_rad) * np.cos(azimuth_rad - aspect_rad))
+    hillshade_value = ((np.cos(zenith_rad) * np.cos(slope_rad)) + \
+        (np.sin(zenith_rad) * np.sin(slope_rad) * np.cos(azimuth_rad - aspect_rad)))
+    
+    hillshade_value = (hillshade_value + 1) / 2
     
     return hillshade_value
