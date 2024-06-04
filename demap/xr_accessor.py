@@ -178,7 +178,12 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
         self._xrobj['drainage_area'] = (('y', 'x'), drainage_area_data)
 
         return self._xrobj['drainage_area']
-    
+
+
+    def process_dem(self, base_level=-32768):
+        _ = self.get_flow_direction(base_level=base_level)
+        _ = self.build_hydro_order()
+        _ = self.accumulate_flow()
 
     #####################################
     # stream methods below
