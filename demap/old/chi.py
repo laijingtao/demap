@@ -2,8 +2,8 @@ import copy
 import numpy as np
 from typing import Union
 
-from .geogrid import GeoGrid
-from .stream import Stream, StreamNetwork
+#from .geogrid import GeoGrid
+#from .stream import Stream, StreamNetwork
 from ._impl import (_calculate_chi_from_receiver_impl,
                     _calculate_dist_up_impl,
                     _build_pseudo_receiver_from_network_impl)
@@ -251,7 +251,7 @@ def calculate_channel_slope(stream_network: Union[StreamNetwork, Stream], elev_w
                 elev_up[down_k] = elev[k] - elev[down_k]
                 dist_up[down_k] = dist[k] - dist[down_k]
                 count_up[down_k] = donor_num[k]
-            elif donor_num[k] > count_up[down_k]:
+            elif donor_num[k] > count_up[down_k]: # use the upstream node with largest draiange area
                 elev_up[down_k] = elev[k] - elev[down_k]
                 dist_up[down_k] = dist[k] - dist[down_k]
                 count_up[down_k] = donor_num[k]

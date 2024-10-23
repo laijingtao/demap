@@ -32,7 +32,7 @@ def _build_receiver_impl(flow_dir: np.ndarray):
 
 
 @_speed_up
-def _add_to_stack(i, j,
+def _add_to_stack_receiver(i, j,
                   receiver: np.ndarray,
                   ordered_nodes: np.ndarray,
                   stack_size,
@@ -44,7 +44,7 @@ def _add_to_stack(i, j,
     if in_list[i, j]:
         return ordered_nodes, stack_size
     if receiver[i, j, 0] != i or receiver[i, j, 1] != j:
-        ordered_nodes, stack_size = _add_to_stack(receiver[i, j, 0], receiver[i, j, 1],
+        ordered_nodes, stack_size = _add_to_stack_receiver(receiver[i, j, 0], receiver[i, j, 1],
                                                   receiver, ordered_nodes,
                                                   stack_size, in_list)
 
@@ -57,7 +57,7 @@ def _add_to_stack(i, j,
 
 
 @_speed_up
-def _is_head_impl(receiver: np.ndarray):
+def _is_head_receiver(receiver: np.ndarray):
     ni, nj, _ = receiver.shape
 
     is_head = np.ones((ni, nj))
@@ -70,13 +70,12 @@ def _is_head_impl(receiver: np.ndarray):
 
     return is_head
 
-
 @_speed_up
 def _build_ordered_array_impl(receiver: np.ndarray):
     """Implementation of build_ordered_array"""
     ni, nj, _ = receiver.shape
 
-    is_head = _is_head_impl(receiver)
+    is_head = _is_head_receiver(receiver)
 
     in_list = np.zeros((ni, nj))
     stack_size = 0
@@ -84,7 +83,7 @@ def _build_ordered_array_impl(receiver: np.ndarray):
     for i in range(ni):
         for j in range(nj):
             if is_head[i, j]:
-                ordered_nodes, stack_size = _add_to_stack(i, j,
+                ordered_nodes, stack_size = _add_to_stack_receiver(i, j,
                                                           receiver, ordered_nodes,
                                                           stack_size, in_list)
 

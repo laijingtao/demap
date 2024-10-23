@@ -2,11 +2,21 @@ import os
 import numpy as np
 import pickle
 import rasterio as rio
+import rioxarray
 
-from .geogrid import GeoGrid
-from .stream import StreamNetwork, Stream
+#from .geogrid import GeoGrid
+#from .stream import StreamNetwork, Stream
 
 
+def load_dem(filename):
+    dem = rioxarray.open_rasterio(filename).squeeze()
+    dem = dem.drop_vars('band')
+    dem = dem.rename('dem')
+    ds = dem.to_dataset()
+
+    return ds
+
+'''
 def load(filename):
     """Read a geospatial data"""
 
@@ -125,4 +135,4 @@ def save_as_tiff(grid, filename):
         transform=grid.dataarray.attrs['transform'],
     ) as dst:
         dst.write(grid.dataarray.data, 1)
-        
+'''

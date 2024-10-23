@@ -125,9 +125,12 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
 
         dem = self._xrobj['dem']
 
-        dem_cond = _fill_depression(np.asarray(dem), dem.rio.nodata, self.transform)
-        dem_cond = np.where(dem_cond > base_level, dem_cond, dem.rio.nodata)
-        flow_dir_data = _flow_dir_from_richdem(dem_cond, dem.rio.nodata, self.transform)
+        dem_data = np.asarray(dem)
+        dem_data[dem_data == dem.rio.nodata] = -32768
+
+        dem_cond = _fill_depression(dem_data, -32768, self.transform)
+        dem_cond = np.where(dem_cond > base_level, dem_cond, -32768)
+        flow_dir_data = _flow_dir_from_richdem(dem_cond, -32768, self.transform)
 
         self._xrobj['dem_cond'] = (('y', 'x'), dem_cond)
         self._xrobj['flow_dir'] = (('y', 'x'), flow_dir_data)
