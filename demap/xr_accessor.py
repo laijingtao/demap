@@ -121,7 +121,7 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
         return var_data_list
 
 
-    def get_flow_direction(self, base_level=-32768):
+    def get_flow_direction(self, base_level=-9999):
 
         dem = self._xrobj['dem']
 
@@ -133,6 +133,7 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
         flow_dir_data = _flow_dir_from_richdem(dem_cond, -32768, self.transform)
 
         self._xrobj['dem_cond'] = (('y', 'x'), dem_cond)
+        self._xrobj['dem_cond'] = self._xrobj['dem_cond'].rio.write_nodata(dem.rio.nodata)
         self._xrobj['flow_dir'] = (('y', 'x'), flow_dir_data)
 
         return self._xrobj['flow_dir']
@@ -183,7 +184,7 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
         return self._xrobj['drainage_area']
 
 
-    def process_dem(self, base_level=-32768):
+    def process_dem(self, base_level=-9999):
         _ = self.get_flow_direction(base_level=base_level)
         _ = self.build_hydro_order()
         _ = self.accumulate_flow()
@@ -381,7 +382,7 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
         # stream data
         if isinstance(data_source, xr.Dataset):
             if var_name is None:
-                raise ValueError("var_name cannot be None when getting data from streams")
+                raise ValueError("var_name cannot be None when getting data from dataset")
             else:
                 source_dataarray = data_source[var_name]
                 i_list, j_list = self.stream_coords_rowcol
@@ -642,7 +643,7 @@ def _fill_depression(dem: np.ndarray, nodata, transform):
 
     dem_rd = _to_rdarray(dem, nodata, transform)
     # richdem's filldepression does not work properly with int
-    dem_rd = dem_rd.astype(dtype=float)
+    dem_rd = dem_rd.astype(dtype=np.float32)
 
     print("RichDEM fill depression output:")
     # One way to do this is to use simple epsilon filling.
@@ -724,7 +725,7 @@ def _accumulate_flow_impl(flow_dir: np.ndarray, ordered_nodes: np.ndarray, cells
             # receiver is out the bound, skip
             continue
 
-    return drainage_area
+    return drainage_area.astype(np.float32)
 
 
 @_speed_up

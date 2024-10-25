@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import xarray as xr
 import pickle
 import rasterio as rio
 import rioxarray
@@ -13,6 +14,9 @@ def load_dem(filename):
     dem = dem.drop_vars('band')
     dem = dem.rename('dem')
     ds = dem.to_dataset()
+
+    ds['x'] = ds['x'].astype(np.float32)
+    ds['y'] = ds['y'].astype(np.float32)
 
     return ds
 
@@ -29,17 +33,17 @@ def load(filename):
     outdata = GeoGrid(data, crs, transform, metadata)
 
     return outdata
+'''
 
-
-def network_to_shp(stream_network: StreamNetwork,
+def network_to_shp(stream_network: xr.Dataset,
                    filename: str):
 
-    stream_list = stream_network.to_streams(mode='tributary')
+    stream_list = stream_network.demap.split_stream_network(mode='tributary')
     stream_to_shp(stream_list, filename)
 
 
 def stream_to_shp(stream, filename:str, segmented=False):
-    if isinstance(stream, Stream):
+    if isinstance(stream, xr.Dataset):
         stream_list = [stream]
     else:
         stream_list = stream
@@ -47,12 +51,10 @@ def stream_to_shp(stream, filename:str, segmented=False):
     line_list = []
     attrs = {}
     for s in stream_list:
-        i_list = s.dataset['rows'].data
-        j_list = s.dataset['cols'].data
+        x_list, y_list = s.demap.stream_coords_xy
 
-        x_list, y_list = s.rowcol_to_xy(i_list, j_list)
-
-        xy_coords = np.array([[x_list[k], y_list[k]] for k in range(len(x_list))])
+        #xy_coords = np.array([[x_list[k], y_list[k]] for k in range(len(x_list))])
+        xy_coords = np.column_stack((x_list, y_list))
 
         if segmented:
             seg_id_list = s.dataset['segment'].data
@@ -82,6 +84,7 @@ def stream_to_shp(stream, filename:str, segmented=False):
                 records_dict[key] = attrs[key][i]
             w.record(**records_dict)
 
+'''
 def stream_to_excel(stream, filename: str):
     import pandas as pd
     if isinstance(stream, Stream):

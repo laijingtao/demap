@@ -18,5 +18,5 @@ from .main import (process_dem, build_stream_network, extract_from_xy, split_str
 #from .valley import valley_xsec_at_xy, xsec_along_valley
 from .helpers import rowcol_to_xy, xy_to_rowcol, latlon_to_xy, xy_to_latlon
 #from .plot import show_grid, show_stream, show_swath_loc, get_hillshade
-from .inout import (load_dem)
+from .inout import (load_dem, network_to_shp, stream_to_shp)
 from .xr_accessor import DemapDataarrayAccessor, DemapDatasetAccessor
