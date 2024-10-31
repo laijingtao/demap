@@ -6,8 +6,6 @@ import time
 import numpy as np
 from rasterio import Affine
 
-from ._base import INT
-
 def rowcol_to_xy(row, col, transform: Affine):
     """
     Returns geographic coordinates given GeoArray data (row, col) coordinates.
@@ -30,8 +28,8 @@ def xy_to_rowcol(x, y, transform: Affine):
     x = np.asarray(x)
     y = np.asarray(y)
     col, row = ~transform * (x, y)
-    col = np.floor(col).astype(dtype=INT)
-    row = np.floor(row).astype(dtype=INT)
+    col = np.floor(col).astype(dtype=np.int32)
+    row = np.floor(row).astype(dtype=np.int32)
     return row, col
 
 
