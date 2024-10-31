@@ -42,18 +42,22 @@ class _XarrayAccessorBase:
     def crs(self):
         return self._crs
     
+    '''
     @crs.setter
     def crs(self, value):
         self._crs = value
+    '''
 
     @property
     def transform(self):
         return self._transform
     
+    '''
     @transform.setter
     def transform(self, value):
         self._transform = value
-
+    '''
+    
     def rowcol_to_xy(self, row, col):
         return rowcol_to_xy(row, col, self.transform)
 

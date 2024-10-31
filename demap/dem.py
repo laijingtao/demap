@@ -4,7 +4,7 @@ from typing import Union
 
 from ._base import _speed_up, _XarrayAccessorBase
 
-class _DEMAccessor(_XarrayAccessorBase):
+class DEMAccessor(_XarrayAccessorBase):
     
     def _get_var_data_for_func(self, var_name, local_dict):
 
@@ -100,6 +100,76 @@ class _DEMAccessor(_XarrayAccessorBase):
         _ = self.get_flow_direction(base_level=base_level)
         _ = self.build_hydro_order()
         _ = self.accumulate_flow()
+
+
+    def build_stream_network(self,
+                             flow_dir: Union[np.ndarray, xr.DataArray] = None,
+                             drainage_area: Union[np.ndarray, xr.DataArray] = None,
+                             drainage_area_threshold=1e6):
+
+        flow_dir_data, drainage_area_data = self._get_var_data_for_func(['flow_dir', 'drainage_area'], locals())
+
+        # all nodes with drainage_area smaller than the threshold are set as nodata
+        flow_dir_data = np.where(drainage_area_data > drainage_area_threshold, flow_dir_data, -1)
+
+        #stream_network = self._build_stream_network_impl(flow_dir_data)
+
+        ordered_nodes = _build_hydro_order_impl(flow_dir_data)
+
+        n_nodes = len(ordered_nodes)
+
+        rows = ordered_nodes[:, 0]
+        cols = ordered_nodes[:, 1]
+
+        flow_dir_list = flow_dir_data[rows, cols]
+        flow_dir_list = np.where(flow_dir_list >= 0, flow_dir_list, 0) # just to make sure there is no negative in flow_dir_list
+
+        """
+        Demap's flow direction coding:
+        |4|3|2|
+        |5|0|1|
+        |6|7|8|
+        """
+        di = np.array([0, 0, -1, -1, -1, 0, 1, 1, 1])
+        dj = np.array([0, 1, 1, 0, -1, -1, -1, 0, 1])
+
+        rcv_rows = rows + di[flow_dir_list]
+        rcv_cols = cols + dj[flow_dir_list]
+
+        # fix if rcv_row, rcv_col is nodata
+        rcv_rows = np.where(flow_dir_data[rcv_rows, rcv_cols] >= 0, rcv_rows, rows)
+        rcv_cols = np.where(flow_dir_data[rcv_rows, rcv_cols] >= 0, rcv_cols, cols)
+
+        index_hash = {}
+        for k in range(n_nodes):
+            row, col = rows[k], cols[k]
+            index_hash['{}_{}'.format(int(row), int(col))] = k
+
+        index_list = np.arange(n_nodes)
+        rcv_index_list = np.array([index_hash['{}_{}'.format(int(rcv_rows[k]), int(rcv_cols[k]))] for k in range(n_nodes)])
+        
+        downstream = -np.ones(n_nodes, dtype=np.int32)
+        downstream[index_list] = np.where(index_list != rcv_index_list, rcv_index_list, -1)
+
+        stream_x, stream_y = self.rowcol_to_xy(rows, cols)
+        distance_upstream = _calculate_dist_up_impl(stream_x, stream_y, downstream)
+
+        #ordered_nodes, downstream = _split_stream_network(ordered_nodes, downstream, distance_upstream)
+
+
+        stream_network_ds = xr.Dataset(
+            coords={
+                "hydro_order": np.arange(n_nodes, dtype=np.int32),
+            },
+        )
+        stream_network_ds["rows"] = (["hydro_order"], rows)
+        stream_network_ds["cols"] = (["hydro_order"], cols)
+        stream_network_ds['downstream'] = (['hydro_order'], downstream)
+        stream_network_ds['distance_upstream'] = (['hydro_order'], distance_upstream)
+        stream_network_ds.attrs['crs'] = self.crs
+        stream_network_ds.attrs['transform'] = self.transform
+
+        return stream_network_ds
 
 
 
@@ -323,3 +393,16 @@ def _build_hydro_order_impl(flow_dir: np.ndarray):
     # we want to reverse it to upstream-to-downstream because it's more intuitive.
     ordered_nodes = ordered_nodes[::-1]
     return ordered_nodes
+
+
+@_speed_up
+def _calculate_dist_up_impl(x: np.ndarray, y: np.ndarray, downstream: np.ndarray):
+    dist_up = np.zeros_like(x)
+
+    for k in range(len(x)-1, -1, -1):
+        if downstream[k] > -1:
+            d_k = downstream[k]
+            d_dist = np.sqrt(np.power(x[k] - x[d_k], 2) + np.power(y[k] - y[d_k], 2))
+            dist_up[k] = dist_up[d_k] + d_dist
+
+    return dist_up

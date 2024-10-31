@@ -4,8 +4,8 @@ import rioxarray
 from typing import Union
 
 from ._base import _speed_up, _XarrayAccessorBase
-from .dem import _DEMAccessor
-from .stream import _StreamAccessor
+from .dem import DEMAccessor
+from .stream import StreamAccessor
 
 
 @xr.register_dataarray_accessor("demap")
@@ -19,10 +19,12 @@ class DemapDataarrayAccessor(_XarrayAccessorBase):
     def nodata(self):
         return self._nodata
     
+    '''
     @nodata.setter
     def nodata(self, value):
         self._nodata = value
-
+    '''
+    
     def plotting_extent(self):
         """
         Returns an extent for for matplotlib's imshow (left, right, bottom, top)
@@ -36,6 +38,18 @@ class DemapDataarrayAccessor(_XarrayAccessorBase):
 
 
 @xr.register_dataset_accessor("demap")
-class DemapDatasetAccessor(_DEMAccessor, _StreamAccessor):
+class DemapDatasetAccessor(_XarrayAccessorBase):
     
-    pass
+    def __init__(self, xrobj):
+        super().__init__(xrobj)
+        self.dem = DEMAccessor(xrobj)
+        self.stream = StreamAccessor(xrobj)
+
+    def __getattr__(self, name):
+        # Delegate attribute access to self.dem if the attribute is not found in DemapDatasetAccessor
+        if hasattr(self.dem, name):
+            return getattr(self.dem, name)
+        elif hasattr(self.stream, name):
+            return getattr(self.stream, name)
+        
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
