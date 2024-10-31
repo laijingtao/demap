@@ -1,5 +1,6 @@
 import numpy as np
 import xarray as xr
+import rasterio
 from typing import Union
 
 from ._base import _speed_up, _XarrayAccessorBase
@@ -29,9 +30,22 @@ class DEMAccessor(_XarrayAccessorBase):
 
         return var_data_list
 
-    #####################################
-    # DEM processing methods
-    #####################################
+
+    def assign_crs(self, crs):
+        # Define the CRS and transform
+        transform = rasterio.transform.from_bounds(
+            self._xrobj.x.min().item(),
+            self._xrobj.y.max().item(),
+            self._xrobj.x.max().item(),
+            self._xrobj.y.min().item(),
+            len(self._xrobj.x), len(self._xrobj.y)
+        )  # west, south, east, north, width, height
+
+        # Set the CRS and transform attributes
+        self._xrobj.rio.write_crs(crs, inplace=True)
+        self._xrobj.rio.set_spatial_dims('x', 'y', inplace=True)
+        self._xrobj.rio.write_transform(transform, inplace=True)
+   
 
     def get_flow_direction(self, base_level=-9999):
 
@@ -166,7 +180,7 @@ class DEMAccessor(_XarrayAccessorBase):
         stream_network_ds["cols"] = (["hydro_order"], cols)
         stream_network_ds['downstream'] = (['hydro_order'], downstream)
         stream_network_ds['distance_upstream'] = (['hydro_order'], distance_upstream)
-        stream_network_ds.attrs['crs'] = self.crs
+        stream_network_ds.attrs['crs'] = self.crs # rio accessor will also check here
         stream_network_ds.attrs['transform'] = self.transform
 
         return stream_network_ds

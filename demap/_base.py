@@ -1,4 +1,5 @@
 import numpy as np
+import rasterio
 
 from .helpers import rowcol_to_xy, xy_to_rowcol, latlon_to_xy, xy_to_latlon
 
@@ -35,12 +36,12 @@ class _XarrayAccessorBase:
 
     def __init__(self, xrobj):
         self._xrobj = xrobj
-        self._crs = self._xrobj.rio.crs
-        self._transform = self._xrobj.rio.transform()
+        #self._crs = self._xrobj.rio.crs
+        #self._transform = self._xrobj.rio.transform()
     
     @property
     def crs(self):
-        return self._crs
+        return self._xrobj.rio.crs
     
     '''
     @crs.setter
@@ -50,14 +51,14 @@ class _XarrayAccessorBase:
 
     @property
     def transform(self):
-        return self._transform
+        return self._xrobj.rio.transform()
     
     '''
     @transform.setter
     def transform(self, value):
         self._transform = value
     '''
-    
+
     def rowcol_to_xy(self, row, col):
         return rowcol_to_xy(row, col, self.transform)
 
