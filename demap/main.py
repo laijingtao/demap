@@ -51,7 +51,9 @@ def project_stream_to_grid(dem_ds: xr.Dataset, stream_network_ds: xr.Dataset, va
         nodata=np.nan
     )
 
-    return gridded_value
+    dem_ds[var_name] = (('y', 'x'), gridded_value)
+
+    return dem_ds[var_name]
 
 
 @_speed_up
@@ -61,7 +63,7 @@ def _assign_nearest_stream_node_impl(flow_dir: np.ndarray,
                                      stream_coords_cols: np.ndarray,):
     
 
-    nrow, ncol = np.max(dem_ordered_nodes[:, 0])+1, np.max(dem_ordered_nodes[:, 1])+1
+    nrow, ncol = len(flow_dir), len(flow_dir[0])
 
     nearest_stream_node_row = -np.ones((nrow, ncol), dtype=np.int32)
     nearest_stream_node_col = -np.ones((nrow, ncol), dtype=np.int32)
