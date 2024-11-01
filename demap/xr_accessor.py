@@ -13,18 +13,18 @@ class DemapDataarrayAccessor(_XarrayAccessorBase):
 
     def __init__(self, xrobj):
         super().__init__(xrobj)
-        self._nodata = self._xrobj.rio.nodata
+        #self._nodata = self._xrobj.rio.nodata
 
     @property
     def nodata(self):
-        return self._nodata
+        return self._xrobj.rio.nodata
     
     '''
     @nodata.setter
     def nodata(self, value):
         self._nodata = value
     '''
-    
+
     def plotting_extent(self):
         """
         Returns an extent for for matplotlib's imshow (left, right, bottom, top)
