@@ -45,6 +45,20 @@ class DEMAccessor(_XarrayAccessorBase):
         self._xrobj.rio.write_crs(crs, inplace=True)
         self._xrobj.rio.set_spatial_dims('x', 'y', inplace=True)
         self._xrobj.rio.write_transform(transform, inplace=True)
+
+    def clip_by_ref(self, clip_ref: Union[xr.DataArray, xr.Dataset], clip_padding=0):
+        
+        if not isinstance(clip_ref, Union[xr.DataArray, xr.Dataset]):
+            raise TypeError("Unsupported clip_ref type")
+            
+        xmin, xmax, ymin, ymax = clip_ref.demap.plot.get_extent()
+        clipped = self._xrobj.rio.clip_box(
+            xmin-clip_padding, ymin-clip_padding, xmax+clip_padding, ymax+clip_padding)
+
+        return clipped
+
+    def clip_extent(self, xmin, ymin, xmax, ymax):
+        return self._xrobj.rio.clip_box(xmin, ymin, xmax, ymax)
    
 
     def get_flow_direction(self, base_level=-9999):

@@ -15,6 +15,7 @@ class DemapDataarrayAccessor(_XarrayAccessorBase):
     def __init__(self, xrobj):
         super().__init__(xrobj)
         #self._nodata = self._xrobj.rio.nodata
+        self.dem = DEMAccessor(xrobj)
         self.plot = PlotAccessor(xrobj)
 
     @property
@@ -23,7 +24,9 @@ class DemapDataarrayAccessor(_XarrayAccessorBase):
     
     def __getattr__(self, name):
         # Delegate attribute access to self.dem if the attribute is not found in DemapDatasetAccessor
-        if hasattr(self.plot, name):
+        if hasattr(self.dem, name):
+            return getattr(self.dem, name)
+        elif hasattr(self.plot, name):
             return getattr(self.plot, name)
         
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
@@ -51,5 +54,7 @@ class DemapDatasetAccessor(_XarrayAccessorBase):
             return getattr(self.dem, name)
         elif hasattr(self.stream, name):
             return getattr(self.stream, name)
+        elif hasattr(self.plot, name):
+            return getattr(self.plot, name)
         
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")

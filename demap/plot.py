@@ -7,11 +7,22 @@ from ._base import _speed_up, _XarrayAccessorBase
 
 class PlotAccessor(_XarrayAccessorBase):
 
-    def plotting_extent(self):
+    def get_extent(self):
+        if hasattr(self._xrobj, 'hydro_order') and hasattr(self._xrobj, 'rows'):
+            return self.get_stream_extent()
+        else:
+            return self.get_grid_extent()
+        
+    def get_stream_extent(self):
+        x, y = self._xrobj.demap.stream_coords_xy
+
+        return np.nanmin(x), np.nanmax(x), np.nanmin(y), np.nanmax(y)
+
+    def get_grid_extent(self):
         """
         Returns an extent for for matplotlib's imshow (left, right, bottom, top)
         """
-        rows, cols = self._xrobj.shape[0:2]
+        rows, cols = len(self._xrobj['y']), len(self._xrobj['x'])
         left, top = self.transform * (0, 0)
         right, bottom = self.transform * (cols, rows)
         extent = (left, right, bottom, top)
@@ -94,3 +105,41 @@ class PlotAccessor(_XarrayAccessorBase):
         hillshade['spatial_ref'] = dem.spatial_ref
 
         return hillshade
+    
+
+    def plot_hillshade(self, ax, altitude=45, azimuth=135,
+                       clip_ref: Union[xr.DataArray, xr.Dataset] = None,
+                       clip_padding=0,
+                       **kwargs):
+        
+        if clip_ref is not None:
+            hillshade_dem = self._xrobj['dem'].demap.clip_by_ref(clip_ref=clip_ref, clip_padding=clip_padding)
+        else:
+            hillshade_dem = self._xrobj['dem']
+        
+        hillshade = hillshade_dem.demap.plot.get_hillshade(altitude, azimuth)
+
+        if 'cmap' not in kwargs:
+            kwargs['cmap'] = 'Greys_r'
+        if 'vmin' not in kwargs:
+            kwargs['vmin'] = 0
+        if 'vmax' not in kwargs:
+            kwargs['vmax'] = 1
+
+        im = ax.imshow(hillshade, extent=hillshade.demap.plot.get_grid_extent(), **kwargs)
+
+        return im
+
+    def plot_stream(self, ax, **kwargs):
+
+        streams = self._xrobj.demap.split_stream_network(mode='tributary')
+
+        if 'color' not in kwargs:
+            kwargs['color'] = 'C0'
+
+        for st in streams[:]:
+            x, y = st.demap.stream_coords_xy
+
+            ax.plot(x, y, **kwargs)
+
+    
