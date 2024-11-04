@@ -3,6 +3,7 @@ import xarray as xr
 from typing import Union
 
 from ._base import _speed_up, _XarrayAccessorBase
+from .helpers import round_rowcol_coord
 
 class StreamAccessor(_XarrayAccessorBase):
 
@@ -321,6 +322,28 @@ class StreamAccessor(_XarrayAccessorBase):
         self._xrobj['stream_order'] = (["hydro_order"], stream_order)
         
         return stream_order
+    
+
+    def update_transform(self, transform):
+        old_transform = self._xrobj.demap.transform
+
+        relative_transform = ~transform * old_transform
+
+        old_rows, old_cols = np.asarray(self._xrobj['rows']), np.asarray(self._xrobj['cols'])
+
+        new_cols, new_rows = relative_transform * (old_cols, old_rows)
+
+        new_rows = round_rowcol_coord(new_rows)
+        new_cols = round_rowcol_coord(new_cols)
+
+        new_stream_ds = self._xrobj.copy(deep=True)
+
+        new_stream_ds['rows'] = ('hydro_order', new_rows)
+        new_stream_ds['cols'] = ('hydro_order', new_cols)
+
+        new_stream_ds.demap.transform = transform
+
+        return new_stream_ds
     
 
 

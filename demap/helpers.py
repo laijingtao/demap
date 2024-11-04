@@ -60,6 +60,20 @@ def latlon_to_xy(lat, lon, crs):
     return x, y
 
 
+def round_rowcol_coord(coord, tolerance = 0.01):
+    import warnings
+
+    # Check if values are within tolerance
+    rounded_coord = np.round(coord).astype(np.int32)
+    differences = np.abs(coord - rounded_coord)
+
+    # Raise a warning if any value is outside the tolerance
+    if np.any(differences > tolerance):
+        warnings.warn("Round up row and column values: some values are not close to an integer within the specified tolerance.")
+    
+    return rounded_coord
+
+
 def transform_to_ndarray(transform: Affine) -> np.ndarray:
     a = transform
     b = np.zeros((3, 3))
