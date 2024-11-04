@@ -2,6 +2,7 @@ import numpy as np
 import xarray as xr
 import rasterio
 from typing import Union
+import warnings
 
 from ._base import _speed_up, _XarrayAccessorBase
 
@@ -47,13 +48,36 @@ class DEMAccessor(_XarrayAccessorBase):
         self._xrobj.rio.write_transform(transform, inplace=True)
 
     def clip_by_ref(self, clip_ref: Union[xr.DataArray, xr.Dataset], clip_padding=0):
+        """
+        Clip the dataset by a reference dem dataset or stream dataset
+        
+        Parameters
+        ----------
+        clip_ref: xr.DataArray or xr.Dataset
+            Reference dataset
+        clip_padding: float
+            Padding around the extent of the reference dataset in corresponding units of the reference dataset's CRS.
+        """
         
         if not isinstance(clip_ref, Union[xr.DataArray, xr.Dataset]):
             raise TypeError("Unsupported clip_ref type")
-            
+        
+        dropped_vars = []
+        for var in self._xrobj.data_vars:
+            if 'x' not in self._xrobj[var].dims:
+                dropped_vars.append(var)
+        tmp_ds = self._xrobj.drop_vars(dropped_vars)
+        
+        dropped_vars.remove('ordered_nodes') # this will be added later
+
+        if len(dropped_vars) > 0:
+            warnings.warn("These variables are dropped because they do not have 'x' in their dimensions: {}.".format(', '.join(dropped_vars)))
+
         xmin, xmax, ymin, ymax = clip_ref.demap.plot.get_extent()
-        clipped = self._xrobj.rio.clip_box(
+        clipped = tmp_ds.rio.clip_box(
             xmin-clip_padding, ymin-clip_padding, xmax+clip_padding, ymax+clip_padding)
+
+        _ = clipped.demap.build_hydro_order() # re-build the ordered nodes in the clipped dataset
 
         return clipped
 
