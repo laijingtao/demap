@@ -43,21 +43,17 @@ class _XarrayAccessorBase:
     def crs(self):
         return self._xrobj.rio.crs
     
-    '''
     @crs.setter
     def crs(self, value):
-        self._crs = value
-    '''
+        self._xrobj.rio.write_crs(value, inplace=True)
 
     @property
     def transform(self):
         return self._xrobj.rio.transform()
     
-    '''
     @transform.setter
     def transform(self, value):
-        self._transform = value
-    '''
+        self._xrobj.rio.write_transform(value, inplace=True)
 
     def rowcol_to_xy(self, row, col):
         return rowcol_to_xy(row, col, self.transform)

@@ -194,8 +194,10 @@ class DEMAccessor(_XarrayAccessorBase):
         stream_network_ds["cols"] = (["hydro_order"], cols)
         stream_network_ds['downstream'] = (['hydro_order'], downstream)
         stream_network_ds['distance_upstream'] = (['hydro_order'], distance_upstream)
-        stream_network_ds.attrs['crs'] = self.crs # rio accessor will also check here
-        stream_network_ds.attrs['transform'] = self.transform
+        #stream_network_ds.attrs['crs'] = self.crs # rio accessor will also check here
+        #stream_network_ds.attrs['transform'] = self.transform
+        stream_network_ds.demap.crs = self.crs
+        stream_network_ds.demap.transform = self.transform
 
         return stream_network_ds
 

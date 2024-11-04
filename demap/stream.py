@@ -97,8 +97,10 @@ class StreamAccessor(_XarrayAccessorBase):
             stream_ds["cols"] = (["hydro_order"], sub_ordered_nodes[:, 1])
             # TODO: maybe also add downstream for streams
             stream_ds['distance_upstream'] = (['hydro_order'], sub_distance_upstream)
-            stream_ds.attrs['crs'] = self.crs
-            stream_ds.attrs['transform'] = self.transform
+            #stream_ds.attrs['crs'] = self.crs
+            #stream_ds.attrs['transform'] = self.transform
+            stream_ds.demap.crs = self.crs
+            stream_ds.demap.transform = self.transform
 
             streams.append(stream_ds)
 
@@ -218,8 +220,10 @@ class StreamAccessor(_XarrayAccessorBase):
         sub_network_ds["cols"] = (["hydro_order"], sub_cols)
         sub_network_ds['downstream'] = (['hydro_order'], sub_downstream)
         sub_network_ds['distance_upstream'] = (['hydro_order'], np.asarray(self._xrobj['distance_upstream'])[in_sub_network == True])
-        sub_network_ds.attrs['crs'] = self.crs
-        sub_network_ds.attrs['transform'] = self.transform
+        #sub_network_ds.attrs['crs'] = self.crs
+        #sub_network_ds.attrs['transform'] = self.transform
+        sub_network_ds.demap.crs = self.crs
+        sub_network_ds.demap.transform = self.transform
 
         return sub_network_ds
     
@@ -260,8 +264,10 @@ class StreamAccessor(_XarrayAccessorBase):
         sub_network_ds["cols"] = (["hydro_order"], sub_cols)
         sub_network_ds['downstream'] = (['hydro_order'], sub_downstream)
         sub_network_ds['distance_upstream'] = (['hydro_order'], np.asarray(self._xrobj['distance_upstream'])[in_sub_network == True])
-        sub_network_ds.attrs['crs'] = self.crs
-        sub_network_ds.attrs['transform'] = self.transform
+        #sub_network_ds.attrs['crs'] = self.crs
+        #sub_network_ds.attrs['transform'] = self.transform
+        sub_network_ds.demap.crs = self.crs
+        sub_network_ds.demap.transform = self.transform
 
         return sub_network_ds
     
