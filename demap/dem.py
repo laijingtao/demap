@@ -32,15 +32,19 @@ class DEMAccessor(_XarrayAccessorBase):
         return var_data_list
 
 
-    def assign_crs(self, crs):
-        # Define the CRS and transform
+    def assign_georeferencing(self, crs):
+        # Define the transform
+        x = np.asarray(self._xrobj['x'])
+        y = np.asarray(self._xrobj['y'])
+        dx = np.abs(x[1] - x[0])
+        dy = np.abs(y[1] - y[0])
         transform = rasterio.transform.from_bounds(
-            self._xrobj.x.min().item(),
-            self._xrobj.y.max().item(),
-            self._xrobj.x.max().item(),
-            self._xrobj.y.min().item(),
-            len(self._xrobj.x), len(self._xrobj.y)
-        )  # west, south, east, north, width, height
+            x.min() - dx/2,
+            y.max() + dy/2, 
+            x.max() + dx/2,
+            y.min() - dy/2,
+            len(x), len(y)
+        ) # west, south, east, north, width, height
 
         # Set the CRS and transform attributes
         self._xrobj.rio.write_crs(crs, inplace=True)
