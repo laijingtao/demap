@@ -33,11 +33,11 @@ def project_stream_to_grid(dem_ds: xr.Dataset, stream_network_ds: xr.Dataset, va
     stream_coords_rows, stream_coords_cols = stream_coords_rowcol(stream_network_ds)
 
     flow_dir_data = np.asarray(dem_ds['flow_dir'])
-    ordered_nodes_data = np.asarray(dem_ds['ordered_nodes'])
+    ordered_pixels_data = np.asarray(dem_ds['ordered_pixels'])
 
     nearest_stream_node_row, nearest_stream_node_col = _assign_nearest_stream_node_impl(
         flow_dir_data,
-        ordered_nodes_data,
+        ordered_pixels_data,
         np.asarray(stream_coords_rows),
         np.asarray(stream_coords_cols)
     )
@@ -58,7 +58,7 @@ def project_stream_to_grid(dem_ds: xr.Dataset, stream_network_ds: xr.Dataset, va
 
 @_speed_up
 def _assign_nearest_stream_node_impl(flow_dir: np.ndarray,
-                                     dem_ordered_nodes: np.ndarray,
+                                     dem_ordered_pixels: np.ndarray,
                                      stream_coords_rows: np.ndarray,
                                      stream_coords_cols: np.ndarray,):
     
@@ -84,8 +84,8 @@ def _assign_nearest_stream_node_impl(flow_dir: np.ndarray,
     di = np.array([0, 0, -1, -1, -1, 0, 1, 1, 1])
     dj = np.array([0, 1, 1, 0, -1, -1, -1, 0, 1])
 
-    for k in range(len(dem_ordered_nodes)-1, -1, -1):
-        i, j = dem_ordered_nodes[k, 0], dem_ordered_nodes[k, 1]
+    for k in range(len(dem_ordered_pixels)-1, -1, -1):
+        i, j = dem_ordered_pixels[k, 0], dem_ordered_pixels[k, 1]
 
         if nearest_stream_node_row[i, j] != -1:
             # already assigned, meaning this node is a stream node

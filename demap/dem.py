@@ -72,7 +72,7 @@ class DEMAccessor(_XarrayAccessorBase):
                 dropped_vars.append(var)
         tmp_ds = self._xrobj.drop_vars(dropped_vars)
         
-        dropped_vars.remove('ordered_nodes') # this will be added later
+        dropped_vars.remove('ordered_pixels') # this will be added later
 
         if len(dropped_vars) > 0:
             warnings.warn("These variables are dropped because they do not have 'x' in their dimensions: {}.".format(', '.join(dropped_vars)))
@@ -81,7 +81,7 @@ class DEMAccessor(_XarrayAccessorBase):
         clipped = tmp_ds.rio.clip_box(
             xmin-clip_padding, ymin-clip_padding, xmax+clip_padding, ymax+clip_padding)
 
-        _ = clipped.demap.build_hydro_order() # re-build the ordered nodes in the clipped dataset
+        _ = clipped.demap.build_hydro_order() # re-build the ordered pixels in the clipped dataset
 
         return clipped
 
@@ -108,7 +108,7 @@ class DEMAccessor(_XarrayAccessorBase):
 
     
     def build_hydro_order(self, flow_dir: Union[np.ndarray, xr.DataArray] = None):
-        """Build a hydrologically ordered list of nodes.
+        """Build a hydrologically ordered list of pixels.
         
         Parameters
         ----------
@@ -117,7 +117,7 @@ class DEMAccessor(_XarrayAccessorBase):
             If the dataset contains 'flow_dir', the one in dataset will be used.
 
         Return:
-            ordered_nodes: in this array, upstream point is always in front of
+            ordered_pixels: in this array, upstream point is always in front of
                 its downstream point. Each element is a 1 x 2 array that
                 denotes the (row, col) coordinates in the Dataset.
 
@@ -129,23 +129,23 @@ class DEMAccessor(_XarrayAccessorBase):
         ni, nj = flow_dir_data.shape
         sys.setrecursionlimit(ni*nj)
 
-        ordered_nodes = _build_hydro_order_impl(flow_dir_data)
+        ordered_pixels = _build_hydro_order_impl(flow_dir_data)
 
-        self._xrobj['ordered_nodes'] = (('hydro_order', 'node_coords'), ordered_nodes)
+        self._xrobj['ordered_pixels'] = (('hydro_order', 'pixel_coords'), ordered_pixels)
 
-        return self._xrobj['ordered_nodes']
+        return self._xrobj['ordered_pixels']
     
     
     def accumulate_flow(self,
                         flow_dir: Union[np.ndarray, xr.DataArray] = None,
-                        ordered_nodes: Union[np.ndarray, xr.DataArray] = None):
+                        ordered_pixels: Union[np.ndarray, xr.DataArray] = None):
         """Flow accumulation
         """
 
-        flow_dir_data, ordered_nodes_data = self._get_var_data_for_func(['flow_dir', 'ordered_nodes'], locals())
+        flow_dir_data, ordered_pixels_data = self._get_var_data_for_func(['flow_dir', 'ordered_pixels'], locals())
         
         cellsize = self.dx * self.dy
-        drainage_area_data = _accumulate_flow_impl(flow_dir_data, ordered_nodes_data, cellsize)
+        drainage_area_data = _accumulate_flow_impl(flow_dir_data, ordered_pixels_data, cellsize)
 
         self._xrobj['drainage_area'] = (('y', 'x'), drainage_area_data)
 
@@ -165,17 +165,17 @@ class DEMAccessor(_XarrayAccessorBase):
 
         flow_dir_data, drainage_area_data = self._get_var_data_for_func(['flow_dir', 'drainage_area'], locals())
 
-        # all nodes with drainage_area smaller than the threshold are set as nodata
+        # all pixels with drainage_area smaller than the threshold are set as nodata
         flow_dir_data = np.where(drainage_area_data > drainage_area_threshold, flow_dir_data, -1)
 
         #stream_network = self._build_stream_network_impl(flow_dir_data)
 
-        ordered_nodes = _build_hydro_order_impl(flow_dir_data)
+        ordered_pixels = _build_hydro_order_impl(flow_dir_data)
 
-        n_nodes = len(ordered_nodes)
+        n_pixels = len(ordered_pixels)
 
-        rows = ordered_nodes[:, 0]
-        cols = ordered_nodes[:, 1]
+        rows = ordered_pixels[:, 0]
+        cols = ordered_pixels[:, 1]
 
         flow_dir_list = flow_dir_data[rows, cols]
         flow_dir_list = np.where(flow_dir_list >= 0, flow_dir_list, 0) # just to make sure there is no negative in flow_dir_list
@@ -197,25 +197,25 @@ class DEMAccessor(_XarrayAccessorBase):
         rcv_cols = np.where(flow_dir_data[rcv_rows, rcv_cols] >= 0, rcv_cols, cols)
 
         index_hash = {}
-        for k in range(n_nodes):
+        for k in range(n_pixels):
             row, col = rows[k], cols[k]
             index_hash['{}_{}'.format(int(row), int(col))] = k
 
-        index_list = np.arange(n_nodes)
-        rcv_index_list = np.array([index_hash['{}_{}'.format(int(rcv_rows[k]), int(rcv_cols[k]))] for k in range(n_nodes)])
+        index_list = np.arange(n_pixels)
+        rcv_index_list = np.array([index_hash['{}_{}'.format(int(rcv_rows[k]), int(rcv_cols[k]))] for k in range(n_pixels)])
         
-        downstream = -np.ones(n_nodes, dtype=np.int32)
+        downstream = -np.ones(n_pixels, dtype=np.int32)
         downstream[index_list] = np.where(index_list != rcv_index_list, rcv_index_list, -1)
 
         stream_x, stream_y = self.rowcol_to_xy(rows, cols)
         distance_upstream = _calculate_dist_up_impl(stream_x, stream_y, downstream)
 
-        #ordered_nodes, downstream = _split_stream_network(ordered_nodes, downstream, distance_upstream)
+        #ordered_pixels, downstream = _split_stream_network(ordered_pixels, downstream, distance_upstream)
 
 
         stream_network_ds = xr.Dataset(
             coords={
-                "hydro_order": np.arange(n_nodes, dtype=np.int32),
+                "hydro_order": np.arange(n_pixels, dtype=np.int32),
             },
         )
         stream_network_ds["rows"] = (["hydro_order"], rows)
@@ -284,7 +284,7 @@ def _flow_dir_from_richdem(dem: np.ndarray, nodata, transform):
     Return:
         flow_dir: a grid contain the flow direction information.
         -1 -- nodata
-        0 -- this node produces no flow, i.e., local sink
+        0 -- this pixel produces no flow, i.e., local sink
         1-8 -- flow direction coordinates
 
         RichDEM's coding:
@@ -308,14 +308,14 @@ def _flow_dir_from_richdem(dem: np.ndarray, nodata, transform):
     flow_prop = richdem.FlowProportions(dem=dem_rd, method='D8')
 
     flow_prop = np.array(flow_prop)
-    node_info = flow_prop[:, :, 0]
+    pixel_info = flow_prop[:, :, 0]
     flow_dir_code_rd = np.argmax(flow_prop[:, :, 1:9], axis=2) + 1
 
     to_demap_coding = np.array([0, 5, 4, 3, 2, 1, 8, 7, 6])
 
-    flow_dir_data = np.where(node_info == 0, to_demap_coding[flow_dir_code_rd], 0)
-    flow_dir_data = np.where(node_info == -1, 0, flow_dir_data)
-    flow_dir_data = np.where(node_info == -2, nodata_flow_dir, flow_dir_data)
+    flow_dir_data = np.where(pixel_info == 0, to_demap_coding[flow_dir_code_rd], 0)
+    flow_dir_data = np.where(pixel_info == -1, 0, flow_dir_data)
+    flow_dir_data = np.where(pixel_info == -2, nodata_flow_dir, flow_dir_data)
 
     flow_dir_data = flow_dir_data.astype(np.int8)
 
@@ -323,14 +323,14 @@ def _flow_dir_from_richdem(dem: np.ndarray, nodata, transform):
 
 
 @_speed_up
-def _accumulate_flow_impl(flow_dir: np.ndarray, ordered_nodes: np.ndarray, cellsize):
+def _accumulate_flow_impl(flow_dir: np.ndarray, ordered_pixels: np.ndarray, cellsize):
     di = [0, 0, -1, -1, -1, 0, 1, 1, 1]
     dj = [0, 1, 1, 0, -1, -1, -1, 0, 1]
 
     ni, nj = flow_dir.shape
     drainage_area = np.ones((ni, nj)) * cellsize
-    for k in range(len(ordered_nodes)):
-        i, j = ordered_nodes[k]
+    for k in range(len(ordered_pixels)):
+        i, j = ordered_pixels[k]
         
         if flow_dir[i, j] == 0:
             # sink, skip
@@ -378,7 +378,7 @@ def _is_head(flow_dir: np.ndarray):
 @_speed_up
 def _add_to_stack(i, j,
                   flow_dir: np.ndarray,
-                  ordered_nodes: np.ndarray,
+                  ordered_pixels: np.ndarray,
                   stack_size,
                   in_list: np.ndarray):
     
@@ -392,10 +392,10 @@ def _add_to_stack(i, j,
         # reach nodata
         # Theoraticall, this should never occur, because nodata are excluded
         # from the whole network.
-        return ordered_nodes, stack_size
+        return ordered_pixels, stack_size
     
     if in_list[i, j]:
-        return ordered_nodes, stack_size
+        return ordered_pixels, stack_size
 
     in_list[i, j] = True
 
@@ -408,16 +408,16 @@ def _add_to_stack(i, j,
         r_i = i + di[flow_dir[i, j]]
         r_j = j + dj[flow_dir[i, j]]
         if r_i >= 0 and r_i < ni and r_j >= 0 and r_j < nj:
-            ordered_nodes, stack_size = _add_to_stack(r_i, r_j,
-                                                    flow_dir, ordered_nodes,
+            ordered_pixels, stack_size = _add_to_stack(r_i, r_j,
+                                                    flow_dir, ordered_pixels,
                                                     stack_size, in_list)
 
-    ordered_nodes[stack_size, 0] = i
-    ordered_nodes[stack_size, 1] = j
+    ordered_pixels[stack_size, 0] = i
+    ordered_pixels[stack_size, 1] = j
     stack_size += 1
     
 
-    return ordered_nodes, stack_size
+    return ordered_pixels, stack_size
 
 
 @_speed_up
@@ -437,20 +437,20 @@ def _build_hydro_order_impl(flow_dir: np.ndarray):
 
     in_list = np.zeros((ni, nj), dtype=np.bool_)
     stack_size = 0
-    ordered_nodes = np.zeros((ni*nj, 2), dtype=np.int32)
+    ordered_pixels = np.zeros((ni*nj, 2), dtype=np.int32)
     for i in range(ni):
         for j in range(nj):
             if is_head[i, j]:
-                ordered_nodes, stack_size = _add_to_stack(i, j,
-                                                          flow_dir, ordered_nodes,
-                                                          stack_size, in_list)
+                ordered_pixels, stack_size = _add_to_stack(i, j,
+                                                           flow_dir, ordered_pixels,
+                                                           stack_size, in_list)
 
-    ordered_nodes = ordered_nodes[:stack_size]
+    ordered_pixels = ordered_pixels[:stack_size]
 
-    # currently ordered_nodes is downstream-to-upstream,
+    # currently ordered_pixels is downstream-to-upstream,
     # we want to reverse it to upstream-to-downstream because it's more intuitive.
-    ordered_nodes = ordered_nodes[::-1]
-    return ordered_nodes
+    ordered_pixels = ordered_pixels[::-1]
+    return ordered_pixels
 
 
 @_speed_up

@@ -50,7 +50,7 @@ class StreamAccessor(_XarrayAccessorBase):
         except AttributeError:
             index_hash = self._build_index_hash()
         
-        #index_list = _index_in_ordered_array_impl(row, col, ordered_nodes)
+        #index_list = _index_in_ordered_array_impl(row, col, ordered_pixels)
         index_list = [index_hash['{}_{}'.format(int(row[k]), int(col[k]))] for k in range(len(row))]
 
         if len(index_list) == 1:
@@ -69,11 +69,11 @@ class StreamAccessor(_XarrayAccessorBase):
             mode_flag = 2
 
         rows, cols = self.stream_coords_rowcol
-        ordered_nodes = np.vstack([rows, cols]).T
+        ordered_pixels = np.vstack([rows, cols]).T
         downstream = np.asarray(self._xrobj['downstream'])
         distance_upstream = np.asarray(self._xrobj['distance_upstream'])
 
-        splitted_stream_idx = _split_stream_network(ordered_nodes, downstream, distance_upstream, mode_flag)
+        splitted_stream_idx = _split_stream_network(ordered_pixels, downstream, distance_upstream, mode_flag)
 
         stream_end_idx = np.where(splitted_stream_idx == -1)[0]
         streams = []
@@ -86,16 +86,16 @@ class StreamAccessor(_XarrayAccessorBase):
             stream_end = stream_end_idx[k]
 
             stream_idx = splitted_stream_idx[stream_start:stream_end]
-            sub_ordered_nodes = ordered_nodes[stream_idx]
+            sub_ordered_pixels = ordered_pixels[stream_idx]
             sub_distance_upstream = distance_upstream[stream_idx]
             
             stream_ds = xr.Dataset(
                 coords={
-                    "hydro_order": np.arange(len(sub_ordered_nodes), dtype=np.int32),
+                    "hydro_order": np.arange(len(sub_ordered_pixels), dtype=np.int32),
                 },
             )
-            stream_ds["rows"] = (["hydro_order"], sub_ordered_nodes[:, 0])
-            stream_ds["cols"] = (["hydro_order"], sub_ordered_nodes[:, 1])
+            stream_ds["rows"] = (["hydro_order"], sub_ordered_pixels[:, 0])
+            stream_ds["cols"] = (["hydro_order"], sub_ordered_pixels[:, 1])
             # TODO: maybe also add downstream for streams
             stream_ds['distance_upstream'] = (['hydro_order'], sub_distance_upstream)
             #stream_ds.attrs['crs'] = self.crs
@@ -164,7 +164,7 @@ class StreamAccessor(_XarrayAccessorBase):
 
     def nearest_to_xy(self, x, y):
         """
-        Return the stream node nearest to given x, y geographic coordinates.
+        Return the stream pixel nearest to given x, y geographic coordinates.
         """
         #row, col = self.xy_to_rowcol(x, y)
         #d_i = np.abs(self.dataset['rows'].data - row)
@@ -184,21 +184,21 @@ class StreamAccessor(_XarrayAccessorBase):
         if direction not in ['up', 'down']:
             raise ValueError("Unknown direction, \'up\' or \'down\'")
 
-        node_idx = self.nearest_to_xy(x, y)
+        pixel_idx = self.nearest_to_xy(x, y)
         if direction == 'up':
-            return self._extract_from_rowcol_up(node_idx)
+            return self._extract_from_rowcol_up(pixel_idx)
         elif direction == 'down':
-            return self._extract_from_rowcol_down(node_idx)
+            return self._extract_from_rowcol_down(pixel_idx)
 
 
-    def _extract_from_rowcol_up(self, node_idx):
+    def _extract_from_rowcol_up(self, pixel_idx):
         import copy
 
         rows = np.asarray(self._xrobj['rows'])
         cols = np.asarray(self._xrobj['cols'])
         downstream = np.asarray(self._xrobj['downstream'])
 
-        outlet = node_idx
+        outlet = pixel_idx
         in_sub_network = _build_upward_sub_network_mask(outlet, downstream)
 
         sub_rows = copy.deepcopy(rows[in_sub_network == True])
@@ -229,7 +229,7 @@ class StreamAccessor(_XarrayAccessorBase):
         return sub_network_ds
     
     
-    def _extract_from_rowcol_down(self, node_idx):
+    def _extract_from_rowcol_down(self, pixel_idx):
         import copy
 
         rows = np.asarray(self._xrobj['rows'])
@@ -237,7 +237,7 @@ class StreamAccessor(_XarrayAccessorBase):
         downstream = np.asarray(self._xrobj['downstream'])
         in_sub_network = np.zeros(len(rows), dtype=bool)
 
-        k = node_idx
+        k = pixel_idx
         in_sub_network[k] = True
 
         # go downstream
@@ -352,37 +352,37 @@ class StreamAccessor(_XarrayAccessorBase):
 ###
 
 @_speed_up
-def _index_in_ordered_array_impl(row, col, ordered_nodes):
+def _index_in_ordered_array_impl(row, col, ordered_pixels):
 
     index_list = np.zeros(len(row), dtype=np.int32)
     for i in range(len(index_list)):
-        index_list[i] = np.where(np.logical_and(ordered_nodes[:, 0] == row[i], ordered_nodes[:, 1] == col[i]))[0].astype(np.int32)[0]
+        index_list[i] = np.where(np.logical_and(ordered_pixels[:, 0] == row[i], ordered_pixels[:, 1] == col[i]))[0].astype(np.int32)[0]
 
     return index_list
 
 
 @_speed_up
-def _split_stream_network(ordered_nodes, downstream, distance_upstream, mode_flag):
-    n_nodes = len(ordered_nodes)
-    is_head = np.ones(n_nodes, dtype=np.bool_)
-    for k in range(n_nodes):
+def _split_stream_network(ordered_pixels, downstream, distance_upstream, mode_flag):
+    n_pixels = len(ordered_pixels)
+    is_head = np.ones(n_pixels, dtype=np.bool_)
+    for k in range(n_pixels):
         if downstream[k] > -1:
             is_head[downstream[k]] = False
-    head_nodes_idx = np.where(is_head == True)[0]
+    head_pixels_idx = np.where(is_head == True)[0]
 
-    sort_idx = np.argsort(distance_upstream[head_nodes_idx])[::-1]
-    head_nodes_idx = head_nodes_idx[sort_idx]
+    sort_idx = np.argsort(distance_upstream[head_pixels_idx])[::-1]
+    head_pixels_idx = head_pixels_idx[sort_idx]
 
     if mode_flag == 1:
-        new_size = n_nodes*2
+        new_size = n_pixels*2
     else:
-        new_size = len(head_nodes_idx) * n_nodes
+        new_size = len(head_pixels_idx) * n_pixels
     
     splitted_stream_idx = np.zeros(new_size, dtype=np.int32)
 
-    in_streams = np.zeros(n_nodes, dtype=np.bool_)
+    in_streams = np.zeros(n_pixels, dtype=np.bool_)
     length = -1
-    for head in head_nodes_idx:
+    for head in head_pixels_idx:
         k = head
 
         length = length + 1
@@ -398,7 +398,7 @@ def _split_stream_network(ordered_nodes, downstream, distance_upstream, mode_fla
                 in_streams[k] = True
 
         if mode_flag == 1 and downstream[k] != -1:
-            # also add juction node
+            # also add juction pixel
             length = length + 1
             splitted_stream_idx[length] = downstream[k]
         
@@ -413,18 +413,18 @@ def _split_stream_network(ordered_nodes, downstream, distance_upstream, mode_fla
 
 @_speed_up
 def _build_upward_sub_network_mask(outlet, downstream: np.ndarray):
-    n_nodes = len(downstream)
-    in_sub_network = np.zeros(n_nodes, dtype=np.bool_)
+    n_pixels = len(downstream)
+    in_sub_network = np.zeros(n_pixels, dtype=np.bool_)
     in_sub_network[outlet] = True
 
     # find all channel heads
-    is_head = np.ones(n_nodes, dtype=np.bool_)
-    for k in range(n_nodes):
+    is_head = np.ones(n_pixels, dtype=np.bool_)
+    for k in range(n_pixels):
         if downstream[k] > -1:
             is_head[downstream[k]] = False
 
     # check if a chnnel head drains to the target outlet
-    for k in range(n_nodes):
+    for k in range(n_pixels):
         if is_head[k]:
             curr_idx = k
             while curr_idx < outlet and curr_idx > -1:
@@ -433,8 +433,8 @@ def _build_upward_sub_network_mask(outlet, downstream: np.ndarray):
                 in_sub_network[k] = True
 
     # now we have all channel heads that drains to the target outlet,
-    # add all downstream nodes
-    for k in range(n_nodes):
+    # add all downstream pixels
+    for k in range(n_pixels):
         if is_head[k] and in_sub_network[k]:
             curr_idx = k
             while curr_idx < outlet:
@@ -466,11 +466,11 @@ def _calculate_chi_impl(downstream: np.ndarray,
 @_speed_up
 def _calculate_ksn_impl(downstream: np.ndarray, chi: np.ndarray, elev: np.ndarray, elev_window):
     
-    # find the downstream nodes that are within the elevation window
+    # find the downstream pixels that are within the elevation window
     # indicated by its index elev_down_k
     '''
     elev_down_k = downstream.copy()
-    domain, = np.where(elev_down_k > -1) # nodes that have not found a downstream node
+    domain, = np.where(elev_down_k > -1) # pixels that have not found a downstream pixel
     while len(domain) > 0:
         domain, = np.where(
             np.logical_and(
@@ -496,7 +496,7 @@ def _calculate_ksn_impl(downstream: np.ndarray, chi: np.ndarray, elev: np.ndarra
             elev_down_k[k] = -1
     
     elev_down = elev - elev[elev_down_k]
-    elev_down[elev_down_k < 0] = 0 # elev_down is -1 for nodes that have no downstream node
+    elev_down[elev_down_k < 0] = 0 # elev_down is -1 for pixels that have no downstream pixel
     elev_down[elev_down < 0] = 0 # fix reverse slope
     chi_down = chi - chi[elev_down_k]
     chi_down[elev_down_k < 0] = 0
@@ -505,7 +505,7 @@ def _calculate_ksn_impl(downstream: np.ndarray, chi: np.ndarray, elev: np.ndarra
     ksn_down[chi_down > 0] = elev_down[chi_down > 0]/chi_down[chi_down > 0]
 
     # find upstream ksn
-    # one node may have multiple upstream nodes
+    # one pixel may have multiple upstream pixels
     # in this case, we take the average of the upstream ksn weighted by their
     # drainage area
 
@@ -520,7 +520,7 @@ def _calculate_ksn_impl(downstream: np.ndarray, chi: np.ndarray, elev: np.ndarra
         down_k = downstream[k]
         if down_k > -1:
             # for down_k, calculate mean ksn_up weighted by draiange area.
-            # count_up records the total drainage area of upstream nodes that
+            # count_up records the total drainage area of upstream pixels that
             # has been involvded in calculating ksn_up
             ksn_up[down_k] = (ksn_up[down_k]*count_up[down_k] + ksn_down[k]*donor_num[k])/(count_up[down_k] + donor_num[k])
             count_up[down_k] += donor_num[k]
