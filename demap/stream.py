@@ -374,9 +374,9 @@ def _split_stream_network(ordered_pixels, downstream, distance_upstream, mode_fl
     head_pixels_idx = head_pixels_idx[sort_idx]
 
     if mode_flag == 1:
-        new_size = n_pixels*2
+        new_size = n_pixels*3 # because we add juction pixel, mutiple by 3
     else:
-        new_size = len(head_pixels_idx) * n_pixels
+        new_size = len(head_pixels_idx) * n_pixels + 10 # add some buffer
     
     splitted_stream_idx = np.zeros(new_size, dtype=np.int32)
 
