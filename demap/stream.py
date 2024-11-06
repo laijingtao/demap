@@ -294,28 +294,10 @@ class StreamAccessor(_XarrayAccessorBase):
     def calculate_stream_order(self, method='strahler'):
         downstream = np.asarray(self._xrobj['downstream'])
 
-        num_of_donor = np.zeros_like(downstream)
-        stream_order = np.ones_like(downstream)
-
         if method == 'strahler':
-            for k in range(len(stream_order)):
-                if downstream[k] != -1:
-                    if num_of_donor[downstream[k]] > 0:
-                        if stream_order[k] > stream_order[downstream[k]]:
-                            stream_order[downstream[k]] = stream_order[k]
-                        elif stream_order[k] == stream_order[downstream[k]]:
-                            stream_order[downstream[k]] += 1
-                    else:
-                        stream_order[downstream[k]] = stream_order[k]
-                    num_of_donor[downstream[k]] += 1
+            stream_order = _get_strahler_order_impl(downstream)
         elif method == 'shreve':
-            for k in range(len(stream_order)):
-                if downstream[k] != -1:
-                    if num_of_donor[downstream[k]] > 0:
-                        stream_order[downstream[k]] += stream_order[k]
-                    else:
-                        stream_order[downstream[k]] = stream_order[k]
-                    num_of_donor[downstream[k]] += 1
+            stream_order = _get_shreve_order_impl(downstream)
         else:
             raise KeyError('Unkown method \'{}\'. strahler or shreve?'.format(method))
 
@@ -530,3 +512,38 @@ def _calculate_ksn_impl(downstream: np.ndarray, chi: np.ndarray, elev: np.ndarra
     ksn = np.where(donor_num > 1, ksn, ksn_down)
 
     return ksn
+
+
+@_speed_up
+def _get_strahler_order_impl(downstream: np.ndarray):
+    num_of_donor = np.zeros_like(downstream)
+    stream_order = np.ones_like(downstream)
+
+    for k in range(len(stream_order)):
+        if downstream[k] != -1:
+            if num_of_donor[downstream[k]] > 0:
+                if stream_order[k] > stream_order[downstream[k]]:
+                    stream_order[downstream[k]] = stream_order[k]
+                elif stream_order[k] == stream_order[downstream[k]]:
+                    stream_order[downstream[k]] += 1
+            else:
+                stream_order[downstream[k]] = stream_order[k]
+            num_of_donor[downstream[k]] += 1
+
+    return stream_order
+
+
+@_speed_up
+def _get_shreve_order_impl(downstream: np.ndarray):
+    num_of_donor = np.zeros_like(downstream)
+    stream_order = np.ones_like(downstream)
+
+    for k in range(len(stream_order)):
+        if downstream[k] != -1:
+            if num_of_donor[downstream[k]] > 0:
+                stream_order[downstream[k]] += stream_order[k]
+            else:
+                stream_order[downstream[k]] = stream_order[k]
+            num_of_donor[downstream[k]] += 1
+
+    return stream_order
