@@ -63,7 +63,7 @@ class DEMAccessor(_XarrayAccessorBase):
             Padding around the extent of the reference dataset in corresponding units of the reference dataset's CRS.
         """
         
-        if not isinstance(clip_ref, Union[xr.DataArray, xr.Dataset]):
+        if not isinstance(clip_ref, (xr.DataArray, xr.Dataset)):
             raise TypeError("Unsupported clip_ref type")
         
         if isinstance(self._xrobj, xr.DataArray):
