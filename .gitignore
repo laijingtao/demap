@@ -156,3 +156,4 @@ cython_debug/
 test
 paper.md
 plan.md
+demap/old/*
